@@ -6,7 +6,6 @@ import sys
 
 import click
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 # Import providers so they auto-register
@@ -37,7 +36,14 @@ def _is_json_mode(output_format: str) -> bool:
     return output_format in ("json", "ndjson")
 
 
-def _error_exit(code: int, error_key: str, message: str, fix: str | None = None, *, json_mode: bool = False) -> None:
+def _error_exit(
+    code: int,
+    error_key: str,
+    message: str,
+    fix: str | None = None,
+    *,
+    json_mode: bool = False,
+) -> None:
     """Print an error (structured JSON if in json mode) and exit."""
     if json_mode:
         payload: dict = {"error": error_key, "message": message}
@@ -469,7 +475,7 @@ def rank(
         _error_exit(
             EXIT_INPUT_ERROR, "no_candidates",
             "Provide name(s) as arguments or via --context.",
-            fix="namera rank name1 name2  (or namera rank --context '{\"name_candidates\": [...]}')",
+            fix="namera rank name1 name2  (or namera rank --context '{...}')",
             json_mode=json_mode,
         )
 
