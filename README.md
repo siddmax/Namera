@@ -29,6 +29,39 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
+## Claude Code Plugin
+
+Use Namera directly inside Claude Code with `/namera:find`, `/namera:rank`, `/namera:compose`, and `/namera:search`.
+
+### Install the plugin
+
+```bash
+claude plugin install https://github.com/siddmax/Namera.git
+```
+
+### Skills
+
+| Skill | What it does |
+|---|---|
+| `/namera:find` | Full discovery — business context to ranked available names |
+| `/namera:compose` | Generate domain name permutations from keywords |
+| `/namera:rank` | Score and rank name candidates |
+| `/namera:search` | Run all checks (domain, WHOIS, trademark) on a single name |
+
+### Example
+
+```
+> /namera:find
+
+What are you building?
+> A mobile-first budget tracker for Gen Z
+
+Name ideas?
+> splitly, buddi, pennypact
+
+# Returns ranked results with domain, trademark, and social availability
+```
+
 ## Commands
 
 ### `find` — Discover names with business context

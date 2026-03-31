@@ -1,0 +1,13 @@
+{
+  "name": "namera",
+  "version": "1.0.0",
+  "description": "Check name availability across domains, trademarks, social handles, and more. AI-native naming tool.",
+  "author": "siddmax",
+  "repository": "https://github.com/siddmax/Namera",
+  "skills": [
+    "skills/find",
+    "skills/compose",
+    "skills/rank",
+    "skills/search"
+  ]
+}
