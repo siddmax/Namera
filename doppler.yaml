@@ -1,0 +1,3 @@
+setup:
+  project: yurivan
+  config: dev

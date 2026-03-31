@@ -7,9 +7,17 @@ build/
 .eggs/
 *.egg
 .env
+.env.*
+.env.local
+.env.production
+*.pem
+*.key
+credentials.json
+service-account*.json
 .venv/
 venv/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
 .DS_Store
+.playwright-mcp/

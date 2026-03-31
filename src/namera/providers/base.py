@@ -9,6 +9,7 @@ class CheckType(Enum):
     DOMAIN = "domain"
     WHOIS = "whois"
     TRADEMARK = "trademark"
+    SOCIAL = "social"
 
 
 class Availability(Enum):

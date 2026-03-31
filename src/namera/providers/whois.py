@@ -4,6 +4,7 @@ import asyncio
 import socket
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
+from namera.retry import with_retry
 
 WHOIS_PORT = 43
 
@@ -55,6 +56,7 @@ class WhoisProvider(Provider):
                 error=str(e),
             )
 
+    @with_retry(max_retries=2, initial_backoff=1.0)
     async def _query_whois(self, server: str, domain: str) -> str:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._sync_whois, server, domain)
