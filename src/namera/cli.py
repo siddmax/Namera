@@ -4,14 +4,15 @@ import asyncio
 
 import click
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
-
-from namera.providers.base import Availability, CheckType, registry
 
 # Import providers so they auto-register
 import namera.providers.domain  # noqa: F401
-import namera.providers.whois  # noqa: F401
+import namera.providers.domain_api  # noqa: F401
 import namera.providers.trademark  # noqa: F401
+import namera.providers.whois  # noqa: F401
+from namera.providers.base import Availability, CheckType, registry
 
 console = Console()
 
@@ -123,3 +124,97 @@ def search(name: str, tlds: str):
             )
 
     console.print(table)
+
+
+@main.command()
+@click.option("--tlds", default="com,ai,app", help="Comma-separated TLDs to check")
+@click.option("--budget", type=float, default=None, help="Max domain price in USD")
+def generate(tlds: str, budget: float | None):
+    """Generate YC-style business names with AI and check availability."""
+    import os
+
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        console.print(
+            "[red]Error:[/red] Set ANTHROPIC_API_KEY env var to use the naming agent.\n"
+            "  export ANTHROPIC_API_KEY=sk-ant-..."
+        )
+        raise SystemExit(1)
+
+    from namera.agent import run_conversation
+
+    def on_message(text: str):
+        console.print(Panel(text, title="[bold cyan]Namera[/bold cyan]", border_style="cyan"))
+
+    def on_input(prompt: str) -> str:
+        return console.input(f"[bold green]You:[/bold green]{prompt}")
+
+    console.print()
+    console.print("[bold]Welcome to Namera — YC-style name generator[/bold]")
+    console.print("Describe your business and I'll come up with great names.\n")
+
+    names, results = run_conversation(
+        on_assistant_message=on_message,
+        on_user_input=on_input,
+    )
+
+    # Display results table
+    console.print()
+    table = Table(title="[bold]Name suggestions + availability[/bold]")
+    table.add_column("Name", style="bold")
+
+    tld_list = [t.strip() for t in tlds.split(",")]
+    for tld in tld_list:
+        table.add_column(f".{tld}", justify="center")
+    table.add_column("Price", justify="right")
+    table.add_column("Trademark", justify="center")
+
+    for result in results:
+        row = [result["name"]]
+
+        # Domain columns
+        domain_map = {d["domain"]: d for d in result.get("domains", [])}
+        for tld in tld_list:
+            domain_key = f"{result['name'].lower()}.{tld}"
+            d = domain_map.get(domain_key, {})
+            if d.get("available"):
+                status = "[green]✓[/green]"
+            elif d.get("error"):
+                status = "[yellow]?[/yellow]"
+            else:
+                status = "[red]✗[/red]"
+            row.append(status)
+
+        # Price (show cheapest available)
+        prices = [
+            d["price"]
+            for d in result.get("domains", [])
+            if d.get("available") and d.get("price")
+        ]
+        if prices:
+            cheapest = min(prices)
+            price_str = f"${cheapest:.2f}"
+            if budget and cheapest > budget:
+                price_str = f"[red]{price_str}[/red]"
+            else:
+                price_str = f"[green]{price_str}[/green]"
+            row.append(price_str)
+        else:
+            row.append("—")
+
+        # Trademark
+        tm = result.get("trademark", {})
+        if tm:
+            tm_status = tm.get("status", "unknown")
+            if tm_status == "available":
+                row.append("[green]Clear[/green]")
+            elif tm_status == "taken":
+                row.append("[red]Conflict[/red]")
+            else:
+                row.append("[yellow]Unknown[/yellow]")
+        else:
+            row.append("—")
+
+        table.add_row(*row)
+
+    console.print(table)
+    console.print()
