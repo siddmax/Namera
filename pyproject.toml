@@ -9,11 +9,29 @@ description = "CLI tool for checking name availability across domains, trademark
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [{ name = "Sid Sharma" }]
+keywords = ["naming", "domain", "trademark", "cli", "availability"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
     "httpx>=0.27",
 ]
+
+[project.urls]
+Homepage = "https://github.com/siddmax/Namera"
+Repository = "https://github.com/siddmax/Namera"
+Issues = "https://github.com/siddmax/Namera/issues"
 
 [project.scripts]
 namera = "namera.cli:main"
