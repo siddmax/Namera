@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "namera"
+version = "0.1.0"
+description = "CLI tool for checking name availability across domains, trademarks, and more"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+namera = "namera.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/namera"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
