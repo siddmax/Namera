@@ -1,62 +1,42 @@
-# Namera Claude Code Plugin — Plan
+# Namera Claude Code Command — Plan
 
 ## Goal
 
-Convert Namera CLI into a Claude Code plugin so anyone can install it and use `/namera:find`, `/namera:rank`, etc. directly in Claude Code.
+Make Namera available as a single `/namera` slash command in Claude Code that handles the full naming flow: context gathering, name generation, availability checks, trademark screening, ranking, and iteration.
 
 ## Structure
 
 ```
 Namera/
-├── .claude-plugin/
-│   └── plugin.json              # Plugin manifest (name, version, description)
-├── skills/
-│   ├── find/
-│   │   └── SKILL.md             # /namera:find — full discovery flow
-│   ├── compose/
-│   │   └── SKILL.md             # /namera:compose — name permutations
-│   ├── rank/
-│   │   └── SKILL.md             # /namera:rank — score & rank names
-│   └── search/
-│       └── SKILL.md             # /namera:search — check a single name
-├── marketplace.json             # So anyone can install via marketplace URL
+├── .claude/
+│   └── commands/
+│       └── namera.md           # /namera — full naming flow
 └── ... (existing code)
 ```
 
-## Skills
+## How It Works
 
-### /namera:find
-Full discovery flow — takes business context as natural language, converts to JSON, runs `namera find --context '...'`, returns ranked available names.
+The `/namera` command is a single Claude Code custom slash command that orchestrates the entire naming workflow:
 
-### /namera:compose
-Name permutations — takes keywords, runs `namera compose` with prefixes/suffixes, optionally checks availability.
-
-### /namera:rank
-Score & rank — takes name candidates, runs `namera rank`, returns scored results.
-
-### /namera:search
-Single name check — runs `namera search` for domain, WHOIS, and trademark on one name.
-
-## Each SKILL.md Will
-
-1. Have YAML frontmatter (name, description, allowed-tools)
-2. Instruct Claude to use `namera` CLI commands via Bash
-3. Handle the case where Namera isn't installed (auto-install via `pip install`)
-4. Format results nicely for the user
+1. Gathers business context conversationally
+2. Generates name candidates if the user needs help
+3. Runs `namera find --json --context '...'` to check everything
+4. Presents ranked results with domain, trademark, and scoring info
+5. Offers iteration — variations via `compose`, deep checks via `search`, re-ranking via `rank`
 
 ## How Users Install
 
 ```bash
-claude /marketplace add-url https://raw.githubusercontent.com/siddmax/Namera/master/marketplace.json
-claude /plugin install namera
+git clone https://github.com/siddmax/Namera.git
+ln -s /path/to/Namera/.claude/commands/namera.md ~/.claude/commands/namera.md
 ```
 
-Then invoke: `/namera:find`, `/namera:rank`, `/namera:compose`, `/namera:search`
+Then invoke: `/namera`
 
 ## Steps
 
-1. Create `.claude-plugin/plugin.json` manifest
-2. Create 4 skill files (find, compose, rank, search)
-3. Create `marketplace.json` at repo root
-4. Update README with install instructions
-5. Push to GitHub
+1. ~~Create fake plugin structure~~ (removed — not a real Claude Code feature)
+2. [x] Create single `.claude/commands/namera.md` slash command
+3. [x] Update README with real install instructions
+4. [ ] Test locally
+5. [ ] Push to GitHub

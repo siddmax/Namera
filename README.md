@@ -29,38 +29,29 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-## Claude Code Plugin
+## Claude Code Integration
 
-Use Namera directly inside Claude Code with `/namera:find`, `/namera:rank`, `/namera:compose`, and `/namera:search`.
+Use Namera as a slash command inside Claude Code. Type `/namera` and it walks you through the entire flow — generates names, checks domains, screens trademarks, and ranks everything.
 
-### Install the plugin
+### Setup
 
 ```bash
-claude plugin install https://github.com/siddmax/Namera.git
+# Clone the repo
+git clone https://github.com/siddmax/Namera.git
+
+# Symlink the command into your global Claude Code commands
+ln -s /path/to/Namera/.claude/commands/namera.md ~/.claude/commands/namera.md
 ```
 
-### Skills
+Then in any Claude Code session, type `/namera` to start.
 
-| Skill | What it does |
-|---|---|
-| `/namera:find` | Full discovery — business context to ranked available names |
-| `/namera:compose` | Generate domain name permutations from keywords |
-| `/namera:rank` | Score and rank name candidates |
-| `/namera:search` | Run all checks (domain, WHOIS, trademark) on a single name |
+### What it does
 
-### Example
-
-```
-> /namera:find
-
-What are you building?
-> A mobile-first budget tracker for Gen Z
-
-Name ideas?
-> splitly, buddi, pennypact
-
-# Returns ranked results with domain, trademark, and social availability
-```
+1. Asks what you're building
+2. Generates name candidates (or uses yours)
+3. Checks domain availability, WHOIS, and trademark conflicts
+4. Ranks everything and recommends the best options
+5. Lets you iterate — explore variations, dig deeper, try new directions
 
 ## Commands
 
