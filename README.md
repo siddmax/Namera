@@ -1,23 +1,23 @@
 # Namera
 
-Name your startup like a YC founder. Namera is a CLI tool that generates short, punchy business names, checks domain availability with pricing, and screens for trademark conflicts — all from your terminal.
+Name your startup like a YC founder. Namera is a CLI tool that generates domain name ideas, checks availability and pricing across TLDs, screens for trademark conflicts, and ranks everything — so you pick from the best options, not all of them.
 
 ## What It Does
 
-1. **Describe your business** — tell Namera what you're building
-2. **Answer a few questions** — target audience, vibe, geography, budget
-3. **Get name suggestions** — short, memorable, easy to spell (think Stripe, Vercel, Figma)
-4. **Ranked results** — names are scored and ranked by domain availability, pricing, and trademark status, giving you the top 10 to choose from
+1. **Describe your business** — pass context about what you're building, your niche, audience, and preferences
+2. **Generate name candidates** — compose names from keywords with prefixes, suffixes, and permutations
+3. **Check everything** — domain availability, WHOIS, RDAP, trademark status, and social handles
+4. **Get ranked results** — names are scored by availability, pricing, trademark safety, and string quality, giving you the top picks
 
 ```
- Name suggestions + availability
-┌──────────┬──────┬──────┬──────┬─────────┬───────────┐
-│ Name     │ .com │ .ai  │ .app │ Price   │ Trademark │
-├──────────┼──────┼──────┼──────┼─────────┼───────────┤
-│ Trekr    │  ✓   │  ✓   │  ✓   │  $12.99 │  Unknown  │
-│ Volo     │  ✗   │  ✓   │  ✓   │  $29.00 │  Unknown  │
-│ Nexora   │  ✓   │  ✓   │  ✗   │  $10.99 │  Unknown  │
-└──────────┴──────┴──────┴──────┴─────────┴───────────┘
+ Ranked results: namera
+┌──────┬────────────┬───────┬────────────┬───────────┐
+│ Rank │ Name       │ Score │ .com       │ Trademark │
+├──────┼────────────┼───────┼────────────┼───────────┤
+│  1   │ getnamera  │  92   │ Available  │  Clear    │
+│  2   │ trynamera  │  87   │ Available  │  Clear    │
+│  3   │ namerahq   │  84   │ Available  │  Clear    │
+└──────┴────────────┴───────┴────────────┴───────────┘
 ```
 
 ## Install
@@ -29,58 +29,139 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-## Quick Start
+## Commands
 
-### Generate names with AI
+### `find` — Discover names with business context
+
+The main command for AI agents and structured input. Pass a JSON context with your business info and name candidates.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...    # required for AI naming
-namera generate
+# See the full JSON schema
+namera find --example
+
+# Run a search
+namera find --context '{"name_candidates": ["voxly", "dataprime"], "description": "fintech analytics platform", "niche": "finance"}'
+
+# Only show available names
+namera find --context '...' --only-available
+
+# Output as JSON, CSV, or NDJSON
+namera find --context '...' --format json
 ```
 
-Options:
+### `compose` — Generate name permutations from keywords
 
 ```bash
-namera generate --tlds com,ai,app     # specify TLDs to check (default: com,ai,app)
-namera generate --budget 50           # set max domain price in USD
+# Add common prefixes and suffixes
+namera compose namera --common-prefixes --common-suffixes
+
+# Custom prefixes/suffixes with availability check
+namera compose namera --prefix get --prefix try --suffix hq --check
+
+# Specify TLDs
+namera compose namera --common-suffixes --tlds com,io
+
+# Output as JSON
+namera compose namera --common-prefixes --json
 ```
 
-### Check a specific name
+### `rank` — Score and rank name candidates
 
 ```bash
-namera search myname                  # run all checks (domain, whois, trademark)
-namera domain myname                  # domain availability only
-namera domain myname --tlds com,io    # specific TLDs
-namera whois myname.com               # WHOIS lookup
-namera trademark myname               # trademark check
+# Rank multiple names
+namera rank voxly dataprime nimbus
+
+# Rank with a scoring profile
+namera rank voxly dataprime --profile fintech
+
+# Rank with full business context
+namera rank --context '{"name_candidates": ["voxly"], "niche": "fintech"}' --json
+```
+
+### `search` — Run all checks on a single name
+
+```bash
+namera search myname
+namera search myname --tlds com,io,ai
+```
+
+### `domain` — Check domain availability
+
+```bash
+namera domain myname
+namera domain myname --tlds com,ai,app
+```
+
+### `whois` — WHOIS lookup
+
+```bash
+namera whois myname.com
+```
+
+### `trademark` — Trademark check
+
+```bash
+namera trademark myname
+```
+
+### `presets` — View TLD presets
+
+```bash
+namera presets
+```
+
+Available presets: `popular`, `tech`, `startup`, `cheap`, `premium`, `finance`, `design`, `security`, `gaming`, `social`, `ecommerce`, `education`, `health`, `food`, `travel`, `media`, `creative`, `geo-us`, `geo-eu`, `geo-asia`
+
+Use presets anywhere TLDs are accepted:
+
+```bash
+namera compose myname --tlds startup --check
+namera rank myname --tlds fintech
 ```
 
 ## Configuration
 
-Namera uses environment variables for API keys. None are required for basic lookups — API keys unlock richer results.
+Namera uses environment variables for API keys. None are required for basic lookups.
 
 | Variable | Required | What it does |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For `generate` | Powers AI name generation via Claude |
-| `GODADDY_API_KEY` | No | Enables domain pricing (falls back to DNS without it) |
+| `GODADDY_API_KEY` | No | Enables domain pricing via GoDaddy API |
 | `GODADDY_API_SECRET` | No | Paired with the API key above |
-| `GODADDY_ENV` | No | `production` or `ote` (default: `ote` for testing) |
+| `GODADDY_ENV` | No | `production` or `ote` (default: `ote`) |
+| `SUPABASE_URL` | No | Supabase URL for trademark database |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase key for trademark lookups |
 
-## How It Works
-
-Namera has a modular provider system. Each lookup (domain, WHOIS, trademark) is a provider that can be swapped or extended independently.
+## Architecture
 
 ```
 src/namera/
-  cli.py                  # CLI entry point (Click)
-  agent.py                # AI naming agent (Claude)
-  ranker.py               # Scoring algorithm — ranks names by availability, price, trademark
+  cli.py                          # CLI entry point (Click)
+  composer.py                     # Name permutation generator
+  context.py                      # Business context parser
+  filters.py                      # Result filtering
+  output.py                       # Output formatting (table, JSON, CSV)
+  presets.py                      # TLD preset definitions
+  runner.py                       # Concurrent provider runner
+  cache.py                        # Result caching
+  retry.py                        # Retry logic for providers
+  session.py                      # Session management
+  theme.py                        # Terminal theme/colors
+  telemetry.py                    # Usage telemetry
+  scoring/
+    engine.py                     # Scoring engine
+    models.py                     # Score data models
+    local_signals.py              # String quality analysis (length, pronounceability)
+    normalizers.py                # Score normalization
+    profiles.py                   # Scoring profiles (fintech, tech, etc.)
   providers/
-    base.py               # Provider ABC + auto-registration
-    domain.py             # DNS-based domain check
-    domain_api.py         # GoDaddy API (availability + pricing)
-    whois.py              # Raw socket WHOIS lookup
-    trademark.py          # Trademark check (stub)
+    base.py                       # Provider ABC + auto-registration
+    domain.py                     # DNS-based domain check
+    domain_api.py                 # GoDaddy API (availability + pricing)
+    rdap.py                       # RDAP protocol lookup
+    whois.py                      # Raw socket WHOIS lookup
+    social.py                     # Social handle availability
+    trademark.py                  # Trademark check (stub)
+    trademark_supabase.py         # Trademark check via Supabase
 ```
 
 ### Adding a provider
@@ -98,13 +179,20 @@ pytest tests/ -v                      # run tests
 ruff check src/ tests/                # lint
 ```
 
+To import trademark data into Supabase:
+
+```bash
+pip install -e ".[import]"
+python scripts/import_trademarks.py
+```
+
 ## Tech Stack
 
 - Python 3.10+
 - [Click](https://click.palletsprojects.com/) — CLI framework
 - [Rich](https://rich.readthedocs.io/) — terminal UI and tables
 - [httpx](https://www.python-httpx.org/) — async HTTP
-- [Anthropic SDK](https://docs.anthropic.com/en/docs/sdks) — AI name generation
+- [Supabase](https://supabase.com/) — trademark database (optional)
 
 ## License
 
