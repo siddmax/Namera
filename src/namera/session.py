@@ -10,8 +10,10 @@ from namera.context import BusinessContext
 from namera.scoring.local_signals import compute_local_signals
 from namera.theme import FIELD_LABEL, PANEL_BORDER, WARNING, styled
 
-# How many candidates to keep after local pre-ranking
-_MAX_CANDIDATES = 50
+# How many candidates to keep after local pre-ranking.
+# Each candidate triggers ~4 network calls (2 domain + 2 trademark),
+# so 30 candidates ≈ 120 calls — fast enough with concurrency=15.
+_MAX_CANDIDATES = 30
 
 
 class InteractiveSession:
@@ -51,7 +53,11 @@ class InteractiveSession:
         # to avoid excessive network calls
         candidates = _prerank(all_candidates, _MAX_CANDIDATES)
 
-        ctx = BusinessContext(name_candidates=candidates)
+        ctx = BusinessContext(
+            name_candidates=candidates,
+            preferred_tlds=["com"],
+            checks=["domain", "trademark"],
+        )
 
         self._show_summary(ctx, config)
 

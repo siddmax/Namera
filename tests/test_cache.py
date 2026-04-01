@@ -11,6 +11,7 @@ def _make_result(provider="dns", query="test.com"):
         check_type=CheckType.DOMAIN,
         provider_name=provider,
         query=query,
+        candidate_name=query.split(".")[0],
         available=Availability.AVAILABLE,
         details={"domains": [{"domain": query, "available": "available"}]},
     )
@@ -25,6 +26,7 @@ class TestResultCache:
         assert cached is not None
         assert cached.available == Availability.AVAILABLE
         assert cached.provider_name == "dns"
+        assert cached.candidate_name == "test"
         cache.close()
 
     def test_miss_returns_none(self, tmp_path):

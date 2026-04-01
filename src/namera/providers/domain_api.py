@@ -5,6 +5,7 @@ import os
 import httpx
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
+from namera.results import normalize_domain_status, summarize_domain_statuses
 
 
 class GoDaddyDomainProvider(Provider):
@@ -21,6 +22,13 @@ class GoDaddyDomainProvider(Provider):
 
     OTE_BASE = "https://api.ote-godaddy.com"
     PROD_BASE = "https://api.godaddy.com"
+
+    @classmethod
+    def cache_kwargs(cls, kwargs: dict) -> dict:
+        return {
+            "tlds": kwargs.get("tlds"),
+            "price_max": kwargs.get("price_max"),
+        }
 
     def _base_url(self) -> str:
         env = os.getenv("GODADDY_ENV", "ote").lower()
@@ -49,12 +57,12 @@ class GoDaddyDomainProvider(Provider):
                 info = await self._check_single(client, domain, price_max)
                 domains_info.append(info)
 
-        any_available = any(d["available"] for d in domains_info)
+        overall = summarize_domain_statuses(d["available"] for d in domains_info)
         return ProviderResult(
             check_type=CheckType.DOMAIN,
             provider_name=self.name,
             query=query,
-            available=Availability.AVAILABLE if any_available else Availability.TAKEN,
+            available=overall,
             details={"domains": domains_info},
         )
 
@@ -77,7 +85,7 @@ class GoDaddyDomainProvider(Provider):
 
                 return {
                     "domain": domain,
-                    "available": available,
+                    "available": normalize_domain_status(available),
                     "price": price_usd,
                     "currency": currency,
                     "within_budget": within_budget,
@@ -86,7 +94,7 @@ class GoDaddyDomainProvider(Provider):
             else:
                 return {
                     "domain": domain,
-                    "available": False,
+                    "available": Availability.UNKNOWN.value,
                     "price": None,
                     "currency": None,
                     "within_budget": None,
@@ -96,7 +104,7 @@ class GoDaddyDomainProvider(Provider):
         except httpx.HTTPError as e:
             return {
                 "domain": domain,
-                "available": False,
+                "available": Availability.UNKNOWN.value,
                 "price": None,
                 "currency": None,
                 "within_budget": None,
@@ -110,14 +118,14 @@ class GoDaddyDomainProvider(Provider):
         import socket
 
         domains_info = []
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         for tld in tlds:
             domain = f"{query}.{tld}"
             try:
                 await loop.run_in_executor(None, socket.gethostbyname, domain)
-                available = False
+                available = Availability.TAKEN.value
             except socket.gaierror:
-                available = True
+                available = Availability.AVAILABLE.value
 
             domains_info.append({
                 "domain": domain,
@@ -129,11 +137,11 @@ class GoDaddyDomainProvider(Provider):
                 "note": "DNS fallback — no GODADDY_API_KEY set",
             })
 
-        any_available = any(d["available"] for d in domains_info)
+        overall = summarize_domain_statuses(d["available"] for d in domains_info)
         return ProviderResult(
             check_type=CheckType.DOMAIN,
             provider_name=self.name,
             query=query,
-            available=Availability.AVAILABLE if any_available else Availability.TAKEN,
+            available=overall,
             details={"domains": domains_info},
         )

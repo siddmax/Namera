@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 from rich.console import Console
 from rich.table import Table
 
-from namera.providers.base import Availability, CheckType, ProviderResult
+from namera.providers.base import CheckType, ProviderResult
+from namera.results import domain_status_to_availability, normalize_domain_status
 from namera.theme import FIELD_LABEL, TABLE_TITLE, availability_style, styled
 
 if TYPE_CHECKING:
@@ -34,11 +35,7 @@ def _flatten_results(results: list[ProviderResult], compact: bool = False) -> li
     for r in results:
         if r.check_type == CheckType.DOMAIN and r.details.get("domains"):
             for d in r.details["domains"]:
-                raw_avail = d["available"]
-                if isinstance(raw_avail, bool):
-                    status = "available" if raw_avail else "taken"
-                else:
-                    status = raw_avail
+                status = normalize_domain_status(d["available"])
                 entry: dict = {
                     "type": r.check_type.value,
                     "query": d["domain"],
@@ -159,11 +156,7 @@ def render_results_table(
     for r in results:
         if r.check_type == CheckType.DOMAIN and r.details.get("domains"):
             for d in r.details["domains"]:
-                avail = d["available"]
-                if isinstance(avail, bool):
-                    avail = Availability.AVAILABLE if avail else Availability.TAKEN
-                else:
-                    avail = Availability(avail)
+                avail = domain_status_to_availability(d["available"])
                 dl, ds = availability_style(avail)
                 relevance = d.get("relevance", "")
                 table.add_row(

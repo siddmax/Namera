@@ -264,4 +264,4 @@ async def test_multiple_tlds():
     domains = {d["domain"]: d for d in result.details["domains"]}
     assert domains["example.com"]["available"] == "taken"
     assert domains["example.net"]["available"] == "available"
-    assert result.available == Availability.TAKEN  # not all available
+    assert result.available == Availability.AVAILABLE

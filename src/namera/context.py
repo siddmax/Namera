@@ -32,6 +32,17 @@ CHECK_TYPE_MAP = {
     "social": CheckType.SOCIAL,
 }
 
+_STRING_FIELDS = {
+    "niche",
+    "industry",
+    "description",
+    "target_audience",
+    "location",
+    "name_style",
+    "scoring_profile",
+}
+_LIST_STRING_FIELDS = {"name_candidates", "preferred_tlds", "checks"}
+
 
 @dataclass
 class BusinessContext:
@@ -67,9 +78,26 @@ class BusinessContext:
 
     @classmethod
     def from_dict(cls, data: dict) -> BusinessContext:
+        if not isinstance(data, dict):
+            raise TypeError("BusinessContext must be a JSON object.")
+
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in known_fields}
-        return cls(**filtered)
+        normalized: dict = {}
+
+        for field_name, value in filtered.items():
+            if field_name in _STRING_FIELDS:
+                normalized[field_name] = _normalize_optional_string(field_name, value)
+            elif field_name in _LIST_STRING_FIELDS:
+                normalized[field_name] = _normalize_string_list(field_name, value)
+            elif field_name == "max_domain_price":
+                normalized[field_name] = _normalize_price(value)
+            elif field_name == "weight_overrides":
+                normalized[field_name] = _normalize_weight_overrides(value)
+            else:
+                normalized[field_name] = value
+
+        return cls(**normalized)
 
     @classmethod
     def from_json(cls, json_str: str) -> BusinessContext:
@@ -87,10 +115,14 @@ class BusinessContext:
                     return preset
             return self.preferred_tlds
 
-        if self.niche:
-            niche_lower = self.niche.lower()
+        search_text = " ".join(
+            value.lower()
+            for value in (self.niche, self.industry, self.location, self.description)
+            if value
+        )
+        if search_text:
             for keyword, tlds in TLD_HINTS.items():
-                if keyword in niche_lower:
+                if keyword in search_text:
                     return tlds
 
         return DEFAULT_TLDS
@@ -100,8 +132,79 @@ class BusinessContext:
             return [CheckType.DOMAIN, CheckType.WHOIS, CheckType.TRADEMARK]
 
         result = []
+        invalid_checks = []
         for check in self.checks:
             ct = CHECK_TYPE_MAP.get(check.lower())
             if ct:
                 result.append(ct)
-        return result or [CheckType.DOMAIN, CheckType.WHOIS, CheckType.TRADEMARK]
+            else:
+                invalid_checks.append(check)
+
+        if invalid_checks:
+            raise ValueError(
+                "Invalid checks: "
+                + ", ".join(sorted(invalid_checks))
+                + ". Expected one or more of: domain, whois, trademark, social."
+            )
+
+        return result
+
+
+def _normalize_optional_string(field_name: str, value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string.")
+
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_string_list(field_name: str, value: object) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise TypeError(f"{field_name} must be a list of strings.")
+
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise TypeError(f"{field_name} must be a list of strings.")
+
+        item_value = item.strip()
+        if item_value:
+            if field_name == "preferred_tlds":
+                normalized.append(item_value.lstrip("."))
+            else:
+                normalized.append(item_value)
+
+    return list(dict.fromkeys(normalized))
+
+
+def _normalize_price(value: object) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)):
+        raise TypeError("max_domain_price must be numeric.")
+
+    normalized = float(value)
+    if normalized < 0:
+        raise ValueError("max_domain_price must be non-negative.")
+    return normalized
+
+
+def _normalize_weight_overrides(value: object) -> dict[str, float] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("weight_overrides must be an object mapping signal names to numbers.")
+
+    normalized: dict[str, float] = {}
+    for key, weight in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise TypeError("weight_overrides keys must be non-empty strings.")
+        if not isinstance(weight, (int, float)):
+            raise TypeError("weight_overrides values must be numeric.")
+        normalized[key.strip()] = float(weight)
+
+    return normalized or None

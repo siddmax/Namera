@@ -72,17 +72,18 @@ class RankingEngine:
         return False, None
 
     def _compute_score(self, signals: dict[str, Signal]) -> float:
-        """Compute weighted composite score."""
+        """Compute weighted composite score.
+
+        Missing signals contribute 0 to the numerator but their weight
+        stays in the denominator, so names with failed checks are not
+        artificially boosted.
+        """
         total = 0.0
-        weight_sum = 0.0
+        total_weight = sum(self.profile.weights.values())
 
         for signal_name, weight in self.profile.weights.items():
             signal = signals.get(signal_name)
             if signal is not None:
                 total += signal.value * weight
-                weight_sum += weight
 
-        # Normalize by actual weights used (handles missing signals gracefully)
-        if weight_sum > 0:
-            return total / weight_sum
-        return 0.0
+        return total / total_weight if total_weight > 0 else 0.0

@@ -28,9 +28,13 @@ class SocialHandleProvider(Provider):
     name = "social"
     check_type = CheckType.SOCIAL
 
+    @classmethod
+    def cache_kwargs(cls, kwargs: dict) -> dict:
+        return {"social_platforms": kwargs.get("social_platforms")}
+
     async def check(self, query: str, **kwargs) -> ProviderResult:
         platforms_to_check = kwargs.get("social_platforms", list(PLATFORMS.keys()))
-        results: dict[str, str] = {}
+        results: dict[str, Availability] = {}
 
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -46,11 +50,11 @@ class SocialHandleProvider(Provider):
 
             for platform, result in zip(tasks.keys(), gathered):
                 if isinstance(result, Exception):
-                    results[platform] = "unknown"
+                    results[platform] = Availability.UNKNOWN
                 else:
                     results[platform] = result
 
-        available_count = sum(1 for v in results.values() if v == "available")
+        available_count = sum(1 for v in results.values() if v == Availability.AVAILABLE)
         total = len(results)
 
         if total == 0:
@@ -60,27 +64,30 @@ class SocialHandleProvider(Provider):
         elif available_count == 0:
             overall = Availability.TAKEN
         else:
-            overall = Availability.UNKNOWN
+            overall = Availability.PARTIAL
 
         return ProviderResult(
             check_type=CheckType.SOCIAL,
             provider_name=self.name,
             query=query,
             available=overall,
-            details={"platforms": results},
+            details={
+                "platforms": {p: av.value for p, av in results.items()},
+                "platform_availability": {p: av for p, av in results.items()},
+            },
         )
 
     async def _check_platform(
         self, client: httpx.AsyncClient, platform: str, handle: str
-    ) -> str:
-        """Check a single platform. Returns 'available', 'taken', or 'unknown'."""
+    ) -> Availability:
+        """Check a single platform. Returns an Availability enum value."""
         url = PLATFORMS[platform].format(name=handle)
         try:
             resp = await client.head(url)
             if resp.status_code in _NOT_FOUND:
-                return "available"
+                return Availability.AVAILABLE
             if 200 <= resp.status_code < 400:
-                return "taken"
-            return "unknown"
+                return Availability.TAKEN
+            return Availability.UNKNOWN
         except httpx.HTTPError:
-            return "unknown"
+            return Availability.UNKNOWN

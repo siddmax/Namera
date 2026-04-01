@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -20,20 +19,15 @@ TEST_ENDPOINT = "https://test.supabase.co/functions/v1/trademark-check"
 
 @pytest.fixture(autouse=True)
 def _mock_api_env():
-    """Point at test URL and reset shared client between tests."""
+    """Point at a deterministic test URL."""
     import namera.providers.trademark_supabase as mod
 
-    mod._client = None
-    with patch.object(mod, "TRADEMARK_API_URL", TEST_ENDPOINT):
+    original = mod.TRADEMARK_API_URL
+    mod.TRADEMARK_API_URL = TEST_ENDPOINT
+    try:
         yield
-    if mod._client and not mod._client.is_closed:
-        import asyncio
-
-        try:
-            asyncio.get_event_loop().run_until_complete(mod._client.aclose())
-        except Exception:
-            pass
-    mod._client = None
+    finally:
+        mod.TRADEMARK_API_URL = original
 
 
 @pytest.fixture
@@ -92,10 +86,14 @@ class TestSupabaseTrademarkProvider:
         result = await trademark_provider.check("xyznonexistent")
         assert result.available == Availability.AVAILABLE
         assert result.details["match_count"] == 0
+        assert result.candidate_name == "xyznonexistent"
 
     @pytest.mark.asyncio
-    async def test_unknown_on_network_error(self, trademark_provider, httpx_mock):
-        httpx_mock.add_exception(httpx.ConnectError("Connection refused"))
+    async def test_unknown_on_network_error(self, trademark_provider, monkeypatch):
+        async def fail(*args, **kwargs):
+            raise httpx.ConnectError("Connection refused")
+
+        monkeypatch.setattr("namera.providers.trademark_supabase._post_json", fail)
 
         result = await trademark_provider.check("test")
         assert result.available == Availability.UNKNOWN
@@ -195,8 +193,41 @@ class TestSupabaseSimilarityProvider:
         assert result.details["max_similarity"] == 0.0
 
     @pytest.mark.asyncio
-    async def test_unknown_on_error(self, similarity_provider, httpx_mock):
-        httpx_mock.add_exception(httpx.ConnectError("timeout"))
+    async def test_batch_trademark_check_uses_durable_cache(
+        self,
+        tmp_path,
+        monkeypatch,
+        httpx_mock,
+    ):
+        from namera.cache import ResultCache
+        from namera.providers.trademark_supabase import batch_trademark_check
+
+        cache = ResultCache(db_path=tmp_path / "cache.db")
+        monkeypatch.setattr("namera.providers.trademark_supabase.get_cache", lambda: cache)
+        httpx_mock.add_response(
+            url=TM_URL,
+            json={
+                "results": {
+                    "acme": {"exact": {"matches": [], "count": 0, "trademarked": False}},
+                },
+            },
+        )
+
+        first = await batch_trademark_check(["acme"], mode="exact")
+        assert first[0].available == Availability.AVAILABLE
+        assert len(httpx_mock.get_requests()) == 1
+
+        second = await batch_trademark_check(["acme"], mode="exact")
+        assert second[0].available == Availability.AVAILABLE
+        assert len(httpx_mock.get_requests()) == 1
+        cache.close()
+
+    @pytest.mark.asyncio
+    async def test_unknown_on_error(self, similarity_provider, monkeypatch):
+        async def fail(*args, **kwargs):
+            raise httpx.ConnectError("timeout")
+
+        monkeypatch.setattr("namera.providers.trademark_supabase._post_json", fail)
 
         result = await similarity_provider.check("test")
         assert result.available == Availability.UNKNOWN
@@ -214,44 +245,6 @@ class TestSupabaseSimilarityProvider:
 
 
 class TestTrademarkRiskFiltering:
-    """Tests for the trademark risk flagging in filters.py."""
-
-    def test_flag_trademark_risks_marks_risky_names(self):
-        from namera.filters import flag_trademark_risks
-
-        results = [
-            ProviderResult(
-                check_type=CheckType.TRADEMARK,
-                provider_name="uspto",
-                query="apple",
-                available=Availability.TAKEN,
-                details={"match_count": 1},
-            ),
-            ProviderResult(
-                check_type=CheckType.DOMAIN,
-                provider_name="dns",
-                query="apple",
-                available=Availability.AVAILABLE,
-                details={
-                    "domains": [
-                        {"domain": "apple.dev", "available": "available"},
-                    ],
-                },
-            ),
-            ProviderResult(
-                check_type=CheckType.TRADEMARK,
-                provider_name="uspto",
-                query="xyzclean",
-                available=Availability.AVAILABLE,
-                details={"match_count": 0},
-            ),
-        ]
-
-        flagged = flag_trademark_risks(results)
-        assert flagged[0].details.get("trademark_risk") is True
-        assert flagged[1].details.get("trademark_risk") is True
-        assert flagged[2].details.get("trademark_risk") is None
-
     def test_get_trademark_risk_names(self):
         from namera.filters import get_trademark_risk_names
 
@@ -260,6 +253,7 @@ class TestTrademarkRiskFiltering:
                 check_type=CheckType.TRADEMARK,
                 provider_name="uspto",
                 query="apple",
+                candidate_name="apple",
                 available=Availability.TAKEN,
                 details={},
             ),
@@ -267,6 +261,7 @@ class TestTrademarkRiskFiltering:
                 check_type=CheckType.TRADEMARK,
                 provider_name="uspto",
                 query="banana",
+                candidate_name="banana",
                 available=Availability.AVAILABLE,
                 details={},
             ),

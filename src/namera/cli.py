@@ -8,20 +8,17 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-# Import providers so they auto-register
-import namera.providers.domain  # noqa: F401
-import namera.providers.domain_api  # noqa: F401
-import namera.providers.rdap  # noqa: F401
-import namera.providers.social  # noqa: F401
-import namera.providers.trademark  # noqa: F401
-import namera.providers.whois  # noqa: F401
 from namera.context import BusinessContext
+from namera.core import rank_candidates, resolve_profile
 from namera.output import render_results, render_results_json, render_results_table
+from namera.permutations import generate_permutation_names, names_all_domains_taken
 from namera.presets import TLD_PRESETS, resolve_tld_input
+from namera.providers import register_all
 from namera.providers.base import Availability, CheckType
-from namera.runner import run_checks, run_checks_multi
+from namera.ranking_display import compact_ranked, render_find_ranked, render_ranked_table
+from namera.runner import run_checks, run_checks_multi_batched
 from namera.session import InteractiveSession
-from namera.theme import HEADING, TABLE_TITLE, WARNING, availability_style, styled
+from namera.theme import HEADING, WARNING, availability_style, styled
 
 console = Console()
 
@@ -75,7 +72,7 @@ def _resolve_context(context_json: str | None, *, json_mode: bool = False) -> Bu
     if context_json:
         try:
             return BusinessContext.from_json(context_json)
-        except (json_mod.JSONDecodeError, TypeError) as e:
+        except (json_mod.JSONDecodeError, TypeError, ValueError) as e:
             _error_exit(
                 EXIT_INPUT_ERROR, "invalid_json",
                 f"Invalid --context JSON: {e}",
@@ -88,7 +85,7 @@ def _resolve_context(context_json: str | None, *, json_mode: bool = False) -> Bu
         if stdin_data:
             try:
                 return BusinessContext.from_json(stdin_data)
-            except (json_mod.JSONDecodeError, TypeError) as e:
+            except (json_mod.JSONDecodeError, TypeError, ValueError) as e:
                 _error_exit(
                     EXIT_INPUT_ERROR, "invalid_json",
                     f"Invalid JSON on stdin: {e}",
@@ -107,6 +104,7 @@ def _resolve_context(context_json: str | None, *, json_mode: bool = False) -> Bu
 @click.version_option()
 def main():
     """Namera - Check name availability across domains, trademarks, and more."""
+    register_all()
 
 
 @main.command()
@@ -288,7 +286,16 @@ def find(
     interactive = context_json is None and sys.stdin.isatty()
     ctx = _resolve_context(context_json, json_mode=json_mode)
     tlds = ctx.resolve_tlds()
-    check_types = ctx.resolve_check_types()
+    try:
+        check_types = ctx.resolve_check_types()
+    except ValueError as e:
+        _error_exit(
+            EXIT_INPUT_ERROR,
+            "invalid_context",
+            str(e),
+            fix="namera find --example",
+            json_mode=json_mode,
+        )
 
     if not ctx.name_candidates:
         _error_exit(
@@ -302,15 +309,41 @@ def find(
         console.print(f"\n{styled(f'Checking {len(ctx.name_candidates)} name(s)...', HEADING)}\n")
 
     results = asyncio.run(
-        run_checks_multi(
+        run_checks_multi_batched(
             ctx.name_candidates, check_types,
-            concurrency=concurrency, timeout=timeout, tlds=tlds,
+            concurrency=concurrency,
+            timeout=timeout,
+            tlds=tlds,
+            price_max=ctx.max_domain_price,
         )
     )
-    # Flag and optionally filter trademarked names
-    from namera.filters import flag_trademark_risks, get_trademark_risk_names
 
-    results = flag_trademark_risks(results)
+    # Auto-permute names where all preferred-TLD domains are taken
+    taken_names = names_all_domains_taken(results, tlds)
+    if taken_names:
+        perm_names = generate_permutation_names(taken_names)
+        existing = {n.lower() for n in ctx.name_candidates}
+        perm_names = [n for n in perm_names if n.lower() not in existing]
+        if perm_names:
+            if output_format == "table":
+                console.print(
+                    styled(f"Trying variations for {len(taken_names)} taken name(s)...\n", HEADING)
+                )
+            perm_results = asyncio.run(
+                run_checks_multi_batched(
+                    perm_names, check_types,
+                    concurrency=concurrency,
+                    timeout=timeout,
+                    tlds=tlds,
+                    price_max=ctx.max_domain_price,
+                )
+            )
+            results.extend(perm_results)
+            ctx.name_candidates.extend(perm_names)
+
+    # Filter trademarked names by canonical candidate identity.
+    from namera.filters import filter_trademarked_results, get_trademark_risk_names
+
     risky_names = get_trademark_risk_names(results)
 
     if risky_names and output_format == "table":
@@ -319,8 +352,7 @@ def find(
         )
 
     if filter_trademarked and risky_names:
-        risky_lower = {n.lower() for n in risky_names}
-        results = [r for r in results if r.query.lower() not in risky_lower]
+        results = filter_trademarked_results(results)
 
     if only_available:
         from namera.filters import filter_available_only
@@ -329,7 +361,9 @@ def find(
 
     # Interactive mode: rank and show top 10
     if interactive and output_format == "table":
-        _render_find_ranked(results, ctx)
+        profile = resolve_profile("default")
+        ranked = rank_candidates(ctx.name_candidates, results, profile)
+        render_find_ranked(ranked, tlds, console)
     elif output_format == "json":
         click.echo(render_results_json(results, ctx, verbose=verbose))
     elif output_format == "table":
@@ -345,77 +379,6 @@ def find(
         raise SystemExit(EXIT_NETWORK_ERROR)
     elif errored:
         raise SystemExit(EXIT_PARTIAL_FAILURE)
-
-
-_FIND_TOP_N = 10
-
-
-def _render_find_ranked(results: list, ctx):
-    """Rank results by composite score, show top 10 available names."""
-    from namera.scoring import RankingEngine, get_profile
-
-    profile = get_profile("default")
-    name_list = ctx.name_candidates or []
-
-    # Group results by base name
-    candidates: dict[str, list] = {n: [] for n in name_list}
-    for r in results:
-        query_base = r.query.split(".")[0].lower() if "." in r.query else r.query.lower()
-        for n in name_list:
-            if n.lower() == query_base or n.lower() == r.query.lower():
-                candidates[n].append(r)
-                break
-        else:
-            for n in name_list:
-                if n.lower() in r.query.lower():
-                    candidates[n].append(r)
-                    break
-
-    engine = RankingEngine(profile)
-    ranked = engine.rank(candidates)
-
-    # Filter to non-filtered, non-zero score
-    ranked = [r for r in ranked if not r.filtered_out and r.composite_score > 0]
-    top = ranked[:_FIND_TOP_N]
-
-    if not top:
-        console.print(styled("No available names found.", WARNING))
-        return
-
-    table = Table(title=styled(f"Top {len(top)} Names", TABLE_TITLE))
-    table.add_column("#", style="bold", justify="right")
-    table.add_column("Name", style="bold")
-    table.add_column("Score", justify="right")
-    table.add_column(".com", justify="center")
-    table.add_column("Trademark", justify="center")
-    table.add_column("Length", justify="center")
-    table.add_column("Pronounce", justify="center")
-
-    for i, r in enumerate(top, 1):
-        if r.composite_score >= 0.7:
-            score_str = styled(f"{r.composite_score:.2f}", "bright_green")
-        elif r.composite_score >= 0.4:
-            score_str = styled(f"{r.composite_score:.2f}", "bright_yellow")
-        else:
-            score_str = styled(f"{r.composite_score:.2f}", "red")
-
-        def _sig(name: str, sigs=r.signals) -> str:
-            sig = sigs.get(name)
-            if sig is None:
-                return styled("-", "dim")
-            if sig.value >= 0.7:
-                return styled(f"{sig.value:.1f}", "bright_green")
-            if sig.value >= 0.4:
-                return styled(f"{sig.value:.1f}", "bright_yellow")
-            return styled(f"{sig.value:.1f}", "red")
-
-        table.add_row(
-            str(i), r.name, score_str,
-            _sig("domain_com"), _sig("trademark"),
-            _sig("length"), _sig("pronounceability"),
-        )
-
-    console.print(table)
 
 
 @main.command()
@@ -447,8 +410,6 @@ def rank(
       namera rank voxly dataprime --profile fintech --json\n
       namera rank --context '{"name_candidates": ["voxly"], "niche": "fintech"}'
     """
-    from namera.scoring import RankingEngine, get_profile
-
     output_format = _resolve_format(output_format, json_output)
     json_mode = _is_json_mode(output_format)
 
@@ -456,7 +417,7 @@ def rank(
     if context_json:
         try:
             ctx = BusinessContext.from_json(context_json)
-        except (json_mod.JSONDecodeError, TypeError) as e:
+        except (json_mod.JSONDecodeError, TypeError, ValueError) as e:
             _error_exit(
                 EXIT_INPUT_ERROR, "invalid_json",
                 f"Invalid --context JSON: {e}",
@@ -475,7 +436,10 @@ def rank(
         _error_exit(
             EXIT_INPUT_ERROR, "no_candidates",
             "Provide name(s) as arguments or via --context.",
-            fix="namera rank name1 name2  (or namera rank --context '{...}')",
+            fix=(
+                "namera rank name1 name2  "
+                "(or namera rank --context '{\"name_candidates\": [...]}')"
+            ),
             json_mode=json_mode,
         )
 
@@ -487,18 +451,7 @@ def rank(
             json_mode=json_mode,
         )
 
-    profile = get_profile(profile_name)
-
-    # Apply weight overrides from context
-    if ctx.weight_overrides:
-        merged = {**profile.weights, **ctx.weight_overrides}
-        from namera.scoring.models import ScoringProfile
-        profile = ScoringProfile(
-            name=f"{profile.name}+overrides",
-            weights=merged,
-            filters=profile.filters,
-            description=profile.description,
-        )
+    profile = resolve_profile(profile_name, ctx.weight_overrides)
 
     if output_format == "table":
         msg = f"Ranking {len(name_list)} name(s) with profile: {profile.name}"
@@ -507,31 +460,16 @@ def rank(
     # Run all checks for all names concurrently
     all_types = [CheckType.DOMAIN, CheckType.WHOIS, CheckType.TRADEMARK, CheckType.SOCIAL]
     results = asyncio.run(
-        run_checks_multi(
+        run_checks_multi_batched(
             name_list, all_types,
-            concurrency=concurrency, timeout=timeout, tlds=tld_list,
+            concurrency=concurrency,
+            timeout=timeout,
+            tlds=tld_list,
+            price_max=ctx.max_domain_price,
         )
     )
 
-    # Group results by name
-    candidates: dict[str, list] = {n: [] for n in name_list}
-    for r in results:
-        # Match result to candidate name
-        query_base = r.query.split(".")[0].lower() if "." in r.query else r.query.lower()
-        for n in name_list:
-            if n.lower() == query_base or n.lower() == r.query.lower():
-                candidates[n].append(r)
-                break
-        else:
-            # Fallback: attach to first matching candidate
-            for n in name_list:
-                if n.lower() in r.query.lower():
-                    candidates[n].append(r)
-                    break
-
-    # Rank
-    engine = RankingEngine(profile)
-    ranked = engine.rank(candidates)
+    ranked = rank_candidates(name_list, results, profile)
 
     # Log session (non-blocking, best-effort)
     from namera.telemetry import log_session
@@ -540,77 +478,11 @@ def rank(
     # Output
     if output_format == "json":
         payload = {
-            "ranked": [_compact_ranked(r) for r in ranked],
+            "ranked": [compact_ranked(r) for r in ranked],
         }
         click.echo(json_mod.dumps(payload, separators=(",", ":")))
     else:
-        _render_ranked_table(ranked, profile)
-
-
-def _compact_ranked(r) -> dict:
-    """Compact serialization of a RankedName for agent consumption."""
-    entry: dict = {"name": r.name, "score": round(r.composite_score, 3)}
-    sigs = {k: round(v.value, 2) for k, v in r.signals.items() if v.value > 0}
-    if sigs:
-        entry["signals"] = sigs
-    if r.filtered_out:
-        entry["filtered"] = True
-        if r.filter_reason:
-            entry["reason"] = r.filter_reason
-    return entry
-
-
-def _render_ranked_table(ranked, profile):
-    """Render ranked results as a Rich table."""
-    table = Table(title=f"Rankings (profile: {profile.name})", title_style=TABLE_TITLE)
-    table.add_column("#", style="bold", justify="right")
-    table.add_column("Name", style="bold")
-    table.add_column("Score", justify="right")
-    table.add_column(".com", justify="center")
-    table.add_column("Trademark", justify="center")
-    table.add_column("Social", justify="center")
-    table.add_column("Length", justify="center")
-    table.add_column("Pronounce", justify="center")
-
-    for i, r in enumerate(ranked, 1):
-        if r.filtered_out:
-            score_str = styled("FILTERED", WARNING)
-        elif r.composite_score >= 0.7:
-            score_str = styled(f"{r.composite_score:.2f}", "bright_green")
-        elif r.composite_score >= 0.4:
-            score_str = styled(f"{r.composite_score:.2f}", "bright_yellow")
-        else:
-            score_str = styled(f"{r.composite_score:.2f}", "red")
-
-        def _signal_display(name: str) -> str:
-            sig = r.signals.get(name)
-            if sig is None:
-                return styled("-", "dim")
-            if sig.value >= 0.7:
-                return styled(f"{sig.value:.1f}", "bright_green")
-            if sig.value >= 0.4:
-                return styled(f"{sig.value:.1f}", "bright_yellow")
-            return styled(f"{sig.value:.1f}", "red")
-
-        table.add_row(
-            str(i),
-            r.name,
-            score_str,
-            _signal_display("domain_com"),
-            _signal_display("trademark"),
-            _signal_display("social_availability"),
-            _signal_display("length"),
-            _signal_display("pronounceability"),
-        )
-
-    console.print(table)
-
-    # Show filter reasons
-    filtered = [r for r in ranked if r.filtered_out]
-    if filtered:
-        for r in filtered:
-            console.print(f"  {styled(r.name, 'dim')}: {r.filter_reason}")
-        console.print()
+        render_ranked_table(ranked, profile, console)
 
 
 async def _run_checks_for_domains(domains: list[str]):
@@ -620,7 +492,7 @@ async def _run_checks_for_domains(domains: list[str]):
     from namera.providers.base import Availability as _Av
 
     async def _check_one(domain_name: str) -> dict:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(None, _socket.gethostbyname, domain_name)
             return {"domain": domain_name, "available": _Av.TAKEN.value}
@@ -718,4 +590,3 @@ def presets():
         table.add_row(name, ", ".join(f".{t}" for t in tlds), str(len(tlds)))
 
     console.print(table)
-

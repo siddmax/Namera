@@ -118,6 +118,23 @@ class TestNormalizeDomain:
         assert by_name["domain_io"].value == 0.0
         assert by_name["domain_availability"].value == 0.5
 
+    def test_boolean_domain_statuses_are_normalized(self):
+        result = ProviderResult(
+            check_type=CheckType.DOMAIN,
+            provider_name="domain-api",
+            query="voxly",
+            available=Availability.AVAILABLE,
+            details={"domains": [
+                {"domain": "voxly.com", "available": True},
+                {"domain": "voxly.io", "available": False},
+            ]},
+        )
+        signals = normalize_domain(result)
+        by_name = {s.name: s for s in signals}
+        assert by_name["domain_com"].value == 1.0
+        assert by_name["domain_io"].value == 0.0
+        assert by_name["domain_availability"].value == 0.5
+
 
 class TestNormalizeWhois:
     def test_available(self):

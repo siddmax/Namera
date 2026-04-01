@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from namera.filters import filter_available_only
+from namera.filters import (
+    filter_available_only,
+    filter_trademarked_results,
+    get_trademark_risk_names,
+)
 from namera.providers.base import Availability, CheckType, ProviderResult
 
 
@@ -93,6 +97,19 @@ class TestFilterDomainResults:
         assert len(filtered) == 1
         assert filtered[0].available == Availability.AVAILABLE
 
+    def test_boolean_available_status_is_supported(self):
+        result = _make_domain_result(
+            domains=[
+                {"domain": "example.com", "available": True},
+                {"domain": "example.net", "available": False},
+            ]
+        )
+        filtered = filter_available_only([result])
+        assert len(filtered) == 1
+        assert filtered[0].details["domains"] == [
+            {"domain": "example.com", "available": True},
+        ]
+
 
 class TestFilterEmptyInput:
     """Test empty input returns empty output."""
@@ -150,3 +167,49 @@ class TestFilterMixedResults:
         original_domain_count = len(original.details["domains"])
         filter_available_only([original])
         assert len(original.details["domains"]) == original_domain_count
+
+
+class TestTrademarkFiltering:
+    def test_get_trademark_risk_names_uses_candidate_identity(self):
+        results = [
+            ProviderResult(
+                check_type=CheckType.TRADEMARK,
+                provider_name="uspto",
+                query="acme",
+                candidate_name="Acme",
+                available=Availability.TAKEN,
+                details={},
+            ),
+            ProviderResult(
+                check_type=CheckType.WHOIS,
+                provider_name="whois",
+                query="acme.com",
+                candidate_name="Acme",
+                available=Availability.AVAILABLE,
+                details={},
+            ),
+        ]
+
+        assert get_trademark_risk_names(results) == ["Acme"]
+
+    def test_filter_trademarked_results_drops_rewritten_queries(self):
+        results = [
+            ProviderResult(
+                check_type=CheckType.TRADEMARK,
+                provider_name="uspto",
+                query="acme",
+                candidate_name="acme",
+                available=Availability.TAKEN,
+                details={},
+            ),
+            ProviderResult(
+                check_type=CheckType.WHOIS,
+                provider_name="whois",
+                query="acme.com",
+                candidate_name="acme",
+                available=Availability.AVAILABLE,
+                details={},
+            ),
+        ]
+
+        assert filter_trademarked_results(results) == []

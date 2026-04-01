@@ -200,6 +200,7 @@ async def test_run_checks_single_name():
 
     assert len(results) == 1
     assert results[0].query == "myname"
+    assert results[0].candidate_name == "myname"
     assert results[0].available == Availability.AVAILABLE
 
 

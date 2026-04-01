@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from namera.providers.base import Availability, CheckType, ProviderResult
+from namera.results import is_available_domain_status, normalize_domain_status
 from namera.scoring.models import Signal
 
 _AVAILABILITY_SCORES = {
     Availability.AVAILABLE: 1.0,
     Availability.TAKEN: 0.0,
+    Availability.PARTIAL: 0.5,
     Availability.UNKNOWN: 0.3,
 }
 
@@ -20,7 +22,7 @@ def normalize_domain(result: ProviderResult) -> list[Signal]:
     for d in domains:
         domain = d.get("domain", "")
         tld = domain.rsplit(".", 1)[-1] if "." in domain else ""
-        av_str = d.get("available", "unknown")
+        av_str = normalize_domain_status(d.get("available"))
 
         # Map string availability to score
         if av_str == "available":
@@ -40,7 +42,11 @@ def normalize_domain(result: ProviderResult) -> list[Signal]:
 
     # Aggregate: fraction of TLDs available
     if domains:
-        available_count = sum(1 for d in domains if d.get("available") == "available")
+        available_count = sum(
+            1
+            for d in domains
+            if is_available_domain_status(d.get("available"))
+        )
         aggregate = available_count / len(domains)
         signals.append(Signal(
             name="domain_availability",
@@ -93,10 +99,12 @@ def normalize_social(result: ProviderResult) -> list[Signal]:
     platforms = result.details.get("platforms", {})
 
     for platform, status in platforms.items():
-        if status == "available":
+        if status == Availability.AVAILABLE.value:
             score = 1.0
-        elif status == "taken":
+        elif status == Availability.TAKEN.value:
             score = 0.0
+        elif status == Availability.PARTIAL.value:
+            score = 0.5
         else:
             score = 0.3
         signals.append(Signal(
@@ -108,7 +116,7 @@ def normalize_social(result: ProviderResult) -> list[Signal]:
 
     # Aggregate
     if platforms:
-        available = sum(1 for s in platforms.values() if s == "available")
+        available = sum(1 for s in platforms.values() if s == Availability.AVAILABLE.value)
         signals.append(Signal(
             name="social_availability",
             value=available / len(platforms),
@@ -134,8 +142,3 @@ def normalize_result(result: ProviderResult) -> list[Signal]:
     if normalizer:
         return normalizer(result)
     return []
-
-
-def register_normalizer(check_type: CheckType, fn: callable) -> None:
-    """Register a normalizer for a new check type."""
-    NORMALIZERS[check_type] = fn

@@ -7,6 +7,7 @@ import httpx
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
 from namera.providers.domain import DnsLookupUtil
+from namera.results import summarize_domain_statuses
 
 # IANA RDAP bootstrap URL for DNS registries
 _IANA_RDAP_DNS_URL = "https://data.iana.org/rdap/dns.json"
@@ -62,7 +63,7 @@ async def _whois_fallback(domain: str) -> Availability:
                 response += data
             return response.decode("utf-8", errors="replace")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         raw = await loop.run_in_executor(None, _sync_whois)
         taken = "Domain Name:" in raw or "domain:" in raw.lower()
@@ -76,6 +77,10 @@ class RdapProvider(Provider):
 
     name = "rdap"
     check_type = CheckType.DOMAIN
+
+    @classmethod
+    def cache_kwargs(cls, kwargs: dict) -> dict:
+        return {"tlds": kwargs.get("tlds")}
 
     async def check(self, query: str, **kwargs) -> ProviderResult:
         tlds = kwargs.get("tlds", ["com", "net", "org", "io", "dev"])
@@ -93,16 +98,12 @@ class RdapProvider(Provider):
                     "method": method,
                 })
 
-        all_available = all(
-            r["available"] == Availability.AVAILABLE.value for r in results
-        )
+        overall = summarize_domain_statuses(r["available"] for r in results)
         return ProviderResult(
             check_type=CheckType.DOMAIN,
             provider_name=self.name,
             query=query,
-            available=(
-                Availability.AVAILABLE if all_available else Availability.TAKEN
-            ),
+            available=overall,
             details={"domains": results},
         )
 

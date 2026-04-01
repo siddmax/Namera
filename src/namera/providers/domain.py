@@ -13,7 +13,7 @@ class DnsLookupUtil:
     @staticmethod
     @with_retry(max_retries=2, initial_backoff=0.5)
     async def resolve(domain: str) -> Availability:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             await loop.run_in_executor(None, socket.gethostbyname, domain)
             return Availability.TAKEN

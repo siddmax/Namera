@@ -15,6 +15,7 @@ class CheckType(Enum):
 class Availability(Enum):
     AVAILABLE = "available"
     TAKEN = "taken"
+    PARTIAL = "partial"
     UNKNOWN = "unknown"
 
 
@@ -24,6 +25,7 @@ class ProviderResult:
     provider_name: str
     query: str
     available: Availability
+    candidate_name: str | None = None
     details: dict = field(default_factory=dict)
     error: str | None = None
 
@@ -37,6 +39,11 @@ class Provider(ABC):
     @abstractmethod
     async def check(self, query: str, **kwargs) -> ProviderResult:
         ...
+
+    @classmethod
+    def cache_kwargs(cls, kwargs: dict) -> dict:
+        """Return only the kwargs that materially affect this provider's output."""
+        return kwargs
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

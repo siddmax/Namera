@@ -39,6 +39,7 @@ def _serialize_result(result: ProviderResult) -> str:
         "provider_name": result.provider_name,
         "query": result.query,
         "available": result.available.value,
+        "candidate_name": result.candidate_name,
         "details": result.details,
         "error": result.error,
     })
@@ -52,6 +53,7 @@ def _deserialize_result(data: str) -> ProviderResult:
         provider_name=d["provider_name"],
         query=d["query"],
         available=Availability(d["available"]),
+        candidate_name=d.get("candidate_name"),
         details=d.get("details", {}),
         error=d.get("error"),
     )

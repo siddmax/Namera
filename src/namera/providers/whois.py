@@ -23,6 +23,10 @@ class WhoisProvider(Provider):
         "dev": "whois.nic.google",
     }
 
+    @classmethod
+    def cache_kwargs(cls, kwargs: dict) -> dict:
+        return {}
+
     async def check(self, query: str, **kwargs) -> ProviderResult:
         domain = query if "." in query else f"{query}.com"
         tld = domain.rsplit(".", 1)[-1]
@@ -58,7 +62,7 @@ class WhoisProvider(Provider):
 
     @with_retry(max_retries=2, initial_backoff=1.0)
     async def _query_whois(self, server: str, domain: str) -> str:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._sync_whois, server, domain)
 
     @staticmethod

@@ -47,6 +47,21 @@ class TestBusinessContext:
         with pytest.raises(json.JSONDecodeError):
             BusinessContext.from_json("not json")
 
+    def test_from_json_requires_object(self):
+        with pytest.raises(TypeError, match="JSON object"):
+            BusinessContext.from_json('["foo"]')
+
+    def test_name_candidates_must_be_list(self):
+        with pytest.raises(TypeError, match="name_candidates"):
+            BusinessContext.from_dict({"name_candidates": "foo"})
+
+    def test_weight_overrides_must_be_numeric(self):
+        with pytest.raises(TypeError, match="weight_overrides values"):
+            BusinessContext.from_dict({
+                "name_candidates": ["foo"],
+                "weight_overrides": {"domain_com": "high"},
+            })
+
     def test_to_dict_drops_none(self):
         ctx = BusinessContext(name_candidates=["test"], niche="fintech")
         d = ctx.to_dict()
@@ -98,10 +113,10 @@ class TestResolveCheckTypes:
         types = ctx.resolve_check_types()
         assert types == [CheckType.DOMAIN, CheckType.TRADEMARK]
 
-    def test_invalid_checks_fall_back(self):
+    def test_invalid_checks_raise(self):
         ctx = BusinessContext(checks=["bogus"])
-        types = ctx.resolve_check_types()
-        assert len(types) == 3  # falls back to all
+        with pytest.raises(ValueError, match="Invalid checks"):
+            ctx.resolve_check_types()
 
     def test_case_insensitive(self):
         ctx = BusinessContext(checks=["DOMAIN", "Whois"])

@@ -1,7 +1,7 @@
 # Namera
 
 CLI tool for checking name availability across domains, trademarks, and more.
-Designed to be called directly by AI agents (Claude Code, OpenClaw, Codex, etc.).
+Designed to be called directly by AI agents (Codex, OpenClaw, Codex, etc.).
 
 ## Tech Stack
 
@@ -91,9 +91,7 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
   "preferred_tlds": ["com", "io"],
   "max_domain_price": 50.0,
   "name_style": "short",
-  "checks": ["domain", "whois", "trademark"],
-  "scoring_profile": "fintech",
-  "weight_overrides": {"trademark": 0.3}
+  "checks": ["domain", "whois", "trademark"]
 }
 ```
 
@@ -106,12 +104,9 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
 
 **Optional fields:**
 - `target_audience`, `location`, `name_style` — refine scoring
-- `preferred_tlds` — override auto-detected TLDs (e.g., `["com", "io"]`). Can also be a preset name (e.g., `["tech"]`)
+- `preferred_tlds` — override auto-detected TLDs (e.g., `["com", "io"]`)
 - `max_domain_price` — budget filter
-- `checks` — limit to specific providers (default: domain, whois, trademark). Values: `domain`, `whois`, `trademark`, `social`
-- `scoring_profile` — ranking profile name: `default`, `startup-saas`, `fintech`, `consumer`, `developer-tools`
-- `weight_overrides` — override individual signal weights (merged with profile weights)
-- `industry` — additional industry context
+- `checks` — limit to specific providers (default: all). Values: `domain`, `whois`, `trademark`, `social`
 
 **Input modes:** `--context` flag > stdin pipe > interactive wizard (auto-detected).
 
@@ -150,40 +145,6 @@ namera trademark apple
 pip install "psycopg[binary]>=3.1"
 doppler run -- python scripts/import_trademarks.py --live-only
 ```
-
-## Providers
-
-7 providers auto-register via `__init_subclass__` (imported in `cli.py`):
-
-| Provider | Check Type | Source |
-|----------|-----------|--------|
-| `dns` | DOMAIN | DNS socket resolution, no API key |
-| `domain-api` | DOMAIN | GoDaddy API (availability + pricing), falls back to DNS |
-| `rdap` | DOMAIN | RDAP → DNS → raw WHOIS cascading fallback |
-| `whois` | WHOIS | Raw socket WHOIS (port 43) |
-| `social` | SOCIAL | HTTP HEAD checks (GitHub, Twitter/X, Instagram) |
-| `uspto` | TRADEMARK | Supabase Edge Function (exact match) |
-| `trademark-similarity` | TRADEMARK | Supabase Edge Function (trigram fuzzy match) |
-
-**Environment variables for providers:**
-- `GODADDY_API_KEY`, `GODADDY_API_SECRET`, `GODADDY_ENV` — GoDaddy API (domain-api provider)
-- `NAMERA_TRADEMARK_API_URL` — override trademark endpoint (default: Supabase Edge Function)
-
-## Scoring Engine
-
-Multi-signal weighted ranking in `scoring/`:
-
-1. Provider results normalized to `Signal` objects (0–1 value)
-2. Local signals computed for free: length, pronounceability, string quality
-3. Signals weighted by profile, optional hard filters applied
-4. Names sorted by composite score (non-filtered first)
-
-**Built-in profiles** (`scoring/profiles.py`):
-- `default` — balanced (domain_com 20%, trademark 20%, length 10%, pronounceability 10%)
-- `startup-saas` — prioritizes .com (25%), hard filter: `domain_com >= 0.5`
-- `fintech` — heavy trademark (25%), hard filter: `trademark >= 0.5`
-- `consumer` — social handles (15%), pronounceability (15%)
-- `developer-tools` — weights .dev/.io, GitHub handle
 
 ## Development
 

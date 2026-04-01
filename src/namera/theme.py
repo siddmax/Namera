@@ -23,6 +23,7 @@ FIELD_LABEL = "bold"
 AVAILABILITY_STYLES: dict[Availability, tuple[str, str]] = {
     Availability.AVAILABLE: ("Available", SUCCESS),
     Availability.TAKEN: ("Taken", DANGER),
+    Availability.PARTIAL: ("Partial", WARNING),
     Availability.UNKNOWN: ("Unknown", WARNING),
 }
 
