@@ -155,3 +155,5 @@ ruff check src/ tests/
 ## License
 
 MIT
+
+<!-- mcp-name: io.github.siddmax/namera -->
