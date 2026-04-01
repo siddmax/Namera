@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "namera"
-version = "0.1.0"
+dynamic = ["version"]
 description = "CLI tool for checking name availability across domains, trademarks, and more"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -53,6 +53,12 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/namera/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/namera"]

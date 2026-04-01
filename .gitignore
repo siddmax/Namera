@@ -20,4 +20,5 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .DS_Store
+src/namera/_version.py
 .playwright-mcp/
