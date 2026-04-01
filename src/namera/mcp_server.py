@@ -26,18 +26,15 @@ def _check_mcp_dependency():
 
 _check_mcp_dependency()
 
-import asyncio
-import json
-import logging
-from dataclasses import asdict
+import json  # noqa: E402
+import logging  # noqa: E402
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP  # noqa: E402
 
-from namera.context import BusinessContext
-from namera.core import check_and_rank, check_single, resolve_profile
-from namera.providers.base import Availability, CheckType, ProviderResult
-from namera.ranking_display import build_find_json
-from namera.results import group_results_by_candidate
+from namera.context import BusinessContext  # noqa: E402
+from namera.core import check_and_rank, check_single, resolve_profile  # noqa: E402
+from namera.providers.base import CheckType, ProviderResult  # noqa: E402
+from namera.ranking_display import build_find_json  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +84,8 @@ async def check_name(
         name: The name to check (e.g., "voxly", "acmepay").
         checks: Which checks to run. Options: "domain", "whois", "trademark", "social".
                 Defaults to ["domain", "whois", "trademark"].
-        tlds: Which TLDs to check for domain availability. Defaults to ["com", "net", "org", "io", "dev"].
+        tlds: Which TLDs to check for domain availability.
+              Defaults to ["com", "net", "org", "io", "dev"].
 
     Returns JSON with provider results and any warnings for failed checks.
     """
@@ -135,7 +133,8 @@ async def find_names(
     """Check multiple name candidates with business context, score, and rank them.
 
     Args:
-        context: JSON string with business context. Required field: "name_candidates" (list of names).
+        context: JSON string with business context.
+                 Required field: "name_candidates" (list of names).
                  Optional: "niche", "description", "preferred_tlds", "checks", "scoring_profile",
                  "weight_overrides", "keywords", "target_audience", "location", "name_style".
 

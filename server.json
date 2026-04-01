@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.siddmax/namera",
+  "description": "Check name availability across domains, trademarks, and social handles. Score and rank candidates.",
+  "repository": {
+    "url": "https://github.com/siddmax/Namera",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "namera",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "installInstructions": "pip install namera[mcp]",
+      "environmentVariables": []
+    }
+  ]
+}

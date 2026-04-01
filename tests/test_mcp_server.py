@@ -12,7 +12,6 @@ import pytest
 from namera.providers.base import Availability, CheckType, ProviderResult
 from namera.scoring.models import RankedName, Signal
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -301,8 +300,8 @@ class TestRunnerConsolidation:
     @pytest.mark.asyncio
     async def test_cache_hit_skips_provider(self, monkeypatch):
         """When cache has a result, provider.check() is not called."""
-        from namera.runner import _run_single_check
         from namera.providers.base import Provider
+        from namera.runner import _run_single_check
 
         call_count = 0
 
@@ -319,9 +318,6 @@ class TestRunnerConsolidation:
                     query=query,
                     available=Availability.AVAILABLE,
                 )
-
-        from namera.cache import ResultCache
-        mock_cache = ResultCache.__new__(ResultCache)
 
         cached_result = ProviderResult(
             check_type=CheckType.DOMAIN,
@@ -347,8 +343,8 @@ class TestRunnerConsolidation:
     @pytest.mark.asyncio
     async def test_timeout_returns_unknown(self, monkeypatch):
         """Timeout produces UNKNOWN result, not an exception."""
-        from namera.runner import _run_single_check
         from namera.providers.base import Provider
+        from namera.runner import _run_single_check
 
         class _SlowProvider(Provider):
             name = "test-slow-consolidated"
