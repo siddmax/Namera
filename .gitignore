@@ -22,3 +22,4 @@ venv/
 .DS_Store
 src/namera/_version.py
 .playwright-mcp/
+*.mov

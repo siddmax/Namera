@@ -242,6 +242,7 @@ Optional:  target_audience, location, name_style, preferred_tlds,
     type=click.Choice(["table", "json", "ndjson", "csv"]),
     default="table", help="Output format",
 )
+@click.option("--json", "json_flag", is_flag=True, help="Shorthand for --format json")
 @click.option("--only-available", "-a", is_flag=True, help="Show only available results")
 @click.option(
     "--filter-trademarked/--no-filter-trademarked", default=False,
@@ -251,7 +252,7 @@ Optional:  target_audience, location, name_style, preferred_tlds,
 @click.option("--concurrency", default=15, help="Max concurrent checks")
 @click.option("--timeout", default=15.0, help="Timeout per check in seconds")
 def find(
-    context_json: str | None, example: bool, output_format: str,
+    context_json: str | None, example: bool, output_format: str, json_flag: bool,
     only_available: bool, filter_trademarked: bool, verbose: bool,
     concurrency: int, timeout: float,
 ):
@@ -265,6 +266,8 @@ def find(
     if example:
         click.echo(_CONTEXT_EXAMPLE)
         return
+    if json_flag:
+        output_format = "json"
     output_format = _resolve_format(output_format)
     json_mode = _is_json_mode(output_format)
     interactive = context_json is None and sys.stdin.isatty()
