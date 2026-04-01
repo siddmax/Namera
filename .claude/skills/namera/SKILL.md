@@ -43,21 +43,33 @@ namera compose <keyword> --common-suffixes --tlds com,io --check --json
 
 Ask the user for:
 - What they're building (becomes `description`)
-- Name candidates they're considering (becomes `name_candidates`)
 - Industry/niche if not obvious (becomes `niche`)
+- Any name candidates they already have in mind (optional — you'll generate more)
 
-### 2. Build BusinessContext JSON
+### 2. Generate Name Candidates
 
-Minimum viable:
-```json
-{"name_candidates": ["name1", "name2"]}
-```
+**This is your job as the agent.** Don't just ask the user for names — generate 10-15 candidates yourself based on the business context. Include any names the user already suggested.
 
-Recommended (much better results):
+**What research says works:**
+- **4-8 chars, 1-2 syllables** — 37% higher recall vs longer names (HBR). Apple(5), Uber(4), Zoom(4), Stripe(6).
+- **CVCV patterns** — alternating consonant-vowel ("Nura", "Voxly", "Zesti") maximizes pronounceability. Zero-shot test: if you hesitate saying it, customers will too.
+- **Sound symbolism matters** — soft sounds (b, g, l, m, o) → friendly/reliable (bouba). Hard sounds (k, t, z) → precise/modern (kiki). Match the brand personality.
+- **Portmanteaus trending** — word blends pack double meaning: "Splitly" (split+ly), "Groupon" (group+coupon). Works because they're novel yet parseable.
+- **Coined words find domains** — invented names are far more likely to have .com available than real words.
+
+**Generation mix (aim for 10-15):**
+- ~5 coined CVCV words matching the brand's sound personality
+- ~3 relevant word blends/portmanteaus from the business description
+- ~3 evocative real words repurposed ("Harbor", "Canopy", "Forge")
+- ~2 keyword + suffix ("PayHQ", "BudgetApp") as practical fallbacks
+- Include any names the user already suggested
+
+### 3. Build BusinessContext JSON and Run Check
+
 ```json
 {
   "description": "What the business does",
-  "name_candidates": ["name1", "name2"],
+  "name_candidates": ["generated1", "generated2", "userSuggested1"],
   "niche": "fintech",
   "checks": ["domain", "trademark"],
   "scoring_profile": "default"
@@ -65,8 +77,6 @@ Recommended (much better results):
 ```
 
 See [reference.md](reference.md) for all fields and scoring profiles.
-
-### 3. Run Check
 
 ```bash
 cd /Users/sidsharma/Namera && source .venv/bin/activate && namera find --json --context '<JSON>'
@@ -89,6 +99,7 @@ From the JSON output, highlight:
 ### 5. Follow Up
 
 Offer to:
+- Generate another batch of candidates if nothing resonates
 - Run `namera rank --json --profile <profile> <names>` for deeper comparison
 - Run `namera compose <keyword> --common-suffixes --check --json` for more variations
 - Check specific TLDs: `namera domain <name> --tlds tech,ai,dev --json`
@@ -123,7 +134,9 @@ JSON output from `namera rank --json` returns:
 ```json
 {
   "ranked": [
-    {"name": "x", "score": 0.85, "signals": {"domain_com": 1.0, "trademark": 1.0}}
+    {"name": "x", "score": 87.0, "signals": {"domain_com": 100.0, "trademark": 100.0}}
   ]
 }
 ```
+
+Scores are 0-100 scale (100 = best).

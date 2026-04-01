@@ -42,7 +42,6 @@ All commands support `--format table|json|ndjson|csv` and `--json` shorthand.
 | Provider | Check Type | Source |
 |----------|-----------|--------|
 | `dns` | domain | DNS socket, no API key |
-| `domain-api` | domain | GoDaddy API (pricing), falls back to DNS |
 | `rdap` | domain | RDAP with cascading fallbacks |
 | `whois` | whois | Raw socket WHOIS (port 43) |
 | `social` | social | HTTP checks (GitHub, Twitter/X, Instagram) |

@@ -260,24 +260,8 @@ class TestRenderResultsDispatcher:
             render_results(all_results, format="xml")
 
 
-# --- Backwards compatibility: --json flag ---
-
-
-class TestJsonBackwardsCompat:
-    def test_domain_json_flag(self):
-        """The --json flag should still work as alias for --format json."""
-        from namera.cli import main
-
-        runner = CliRunner()
-        # Use a name that won't actually resolve to avoid network calls
-        # We just need to verify the flag is accepted
-        result = runner.invoke(main, ["domain", "zzz-nonexistent-test", "--json"])
-        # Should not fail with "no such option"
-        assert "no such option" not in (result.output or "").lower()
-        assert result.exit_code == 0 or "Error" not in (result.output or "")
-
+class TestCliFormatOption:
     def test_search_format_option(self):
-        """The --format option should be accepted."""
         from namera.cli import main
 
         runner = CliRunner()

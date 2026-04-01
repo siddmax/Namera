@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from namera.providers.base import ProviderResult
 from namera.scoring.local_signals import compute_local_signals
 from namera.scoring.models import RankedName, ScoringProfile, Signal
 from namera.scoring.normalizers import normalize_result
+
+if TYPE_CHECKING:
+    from namera.context import BusinessContext
 
 
 class RankingEngine:
@@ -15,12 +20,15 @@ class RankingEngine:
         self.profile = profile
 
     def rank(
-        self, candidates: dict[str, list[ProviderResult]]
+        self,
+        candidates: dict[str, list[ProviderResult]],
+        context: BusinessContext | None = None,
     ) -> list[RankedName]:
         """Rank name candidates.
 
         Args:
             candidates: {name: [ProviderResult, ...]} from all providers
+            context: Optional business context for semantic/style/audience signals
 
         Returns:
             Sorted list of RankedName, highest score first.
@@ -28,7 +36,7 @@ class RankingEngine:
         """
         ranked = []
         for name, results in candidates.items():
-            signals = self._collect_signals(name, results)
+            signals = self._collect_signals(name, results, context)
             filtered_out, filter_reason = self._apply_filters(signals)
             score = self._compute_score(signals) if not filtered_out else 0.0
 
@@ -45,7 +53,10 @@ class RankingEngine:
         return ranked
 
     def _collect_signals(
-        self, name: str, results: list[ProviderResult]
+        self,
+        name: str,
+        results: list[ProviderResult],
+        context: BusinessContext | None = None,
     ) -> dict[str, Signal]:
         """Gather all signals for a name from provider results + local analysis."""
         signals: dict[str, Signal] = {}
@@ -55,9 +66,26 @@ class RankingEngine:
             for signal in normalize_result(result):
                 signals[signal.name] = signal
 
+        # Synthesize conservative trademark aggregate from exact + fuzzy
+        exact = signals.get("trademark_exact")
+        fuzzy = signals.get("trademark_fuzzy")
+        if exact or fuzzy:
+            values = [s.value for s in [exact, fuzzy] if s]
+            signals["trademark"] = Signal(
+                name="trademark", value=min(values),
+                raw="aggregate", source="scoring",
+            )
+
         # Add local string-analysis signals
         for signal in compute_local_signals(name):
             signals[signal.name] = signal
+
+        # Add context-aware signals when business context is available
+        if context:
+            from namera.scoring.context_signals import compute_context_signals
+
+            for signal in compute_context_signals(name, context):
+                signals[signal.name] = signal
 
         return signals
 

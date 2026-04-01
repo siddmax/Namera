@@ -3,21 +3,14 @@ from __future__ import annotations
 import threading
 
 from namera.scoring.models import RankedName
-from namera.telemetry import _send_session_log, _telemetry_api_key, log_session
+from namera.telemetry import _send_session_log, log_session
 
 
-def test_telemetry_prefers_publishable_or_anon_keys(monkeypatch):
-    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
-    monkeypatch.setenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon")
+def test_log_session_basic(monkeypatch):
+    calls: list[dict] = []
 
-    assert _telemetry_api_key() == "anon"
-
-
-def test_log_session_is_non_blocking(monkeypatch):
-    calls: list[tuple[str, str, dict]] = []
-
-    def fake_send(url: str, key: str, payload: dict) -> None:
-        calls.append((url, key, payload))
+    def fake_send(payload: dict) -> None:
+        calls.append(payload)
 
     class ImmediateThread:
         def __init__(self, *, target, args, daemon):
@@ -28,8 +21,6 @@ def test_log_session_is_non_blocking(monkeypatch):
         def start(self):
             self._target(*self._args)
 
-    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "publishable")
     monkeypatch.setattr("namera.telemetry._send_session_log", fake_send)
     monkeypatch.setattr(threading, "Thread", ImmediateThread)
 
@@ -41,14 +32,18 @@ def test_log_session_is_non_blocking(monkeypatch):
     )
 
     assert calls
-    assert calls[0][1] == "publishable"
-    assert calls[0][2]["top_name"] == "voxly"
+    assert calls[0]["names"] == ["voxly"]
+    assert calls[0]["top_name"] == "voxly"
+    assert calls[0]["niche"] == "tech"
+    assert calls[0]["num_candidates"] == 1
 
 
-def test_send_session_log_checks_http_errors(monkeypatch):
+
+def test_send_session_log_swallows_errors(monkeypatch):
     class Response:
         def raise_for_status(self):
             raise RuntimeError("boom")
 
     monkeypatch.setattr("namera.telemetry.httpx.post", lambda *args, **kwargs: Response())
-    _send_session_log("https://example.supabase.co", "publishable", {"names": ["voxly"]})
+    # Should not raise — errors are swallowed
+    _send_session_log({"niche": "tech", "top_name": "voxly"})

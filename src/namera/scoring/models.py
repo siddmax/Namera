@@ -47,9 +47,9 @@ class RankedName:
         """Serialize for JSON output."""
         return {
             "name": self.name,
-            "score": round(self.composite_score, 4),
+            "score": round(self.composite_score * 100, 1),
             "signals": {
-                k: {"value": round(v.value, 4), "raw": v.raw, "source": v.source}
+                k: round(v.value * 100, 1)
                 for k, v in self.signals.items()
             },
             "filtered_out": self.filtered_out,

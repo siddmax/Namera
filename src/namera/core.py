@@ -6,9 +6,10 @@ import asyncio
 from collections.abc import Sequence
 
 from namera.context import BusinessContext
+from namera.pipeline import run_discovery
 from namera.providers.base import CheckType, ProviderResult
 from namera.results import group_results_by_candidate
-from namera.runner import run_checks, run_checks_multi_batched
+from namera.runner import run_checks
 from namera.scoring.engine import RankingEngine
 from namera.scoring.models import RankedName, ScoringProfile
 from namera.scoring.profiles import get_profile
@@ -35,11 +36,12 @@ def rank_candidates(
     name_list: Sequence[str],
     results: list[ProviderResult],
     profile: ScoringProfile,
+    context: BusinessContext | None = None,
 ) -> list[RankedName]:
     """Group results by candidate and rank them with the given profile."""
     candidates = group_results_by_candidate(name_list, results)
     engine = RankingEngine(profile)
-    return engine.rank(candidates)
+    return engine.rank(candidates, context=context)
 
 
 async def check_single(
@@ -63,22 +65,19 @@ async def check_and_rank(
     from namera.providers import register_all
     register_all()
 
-    tlds = ctx.resolve_tlds()
-    check_types = ctx.resolve_check_types()
-
-    if not ctx.name_candidates:
+    if not ctx.name_candidates and not ctx.keywords:
         return [], []
-
-    results = await run_checks_multi_batched(
-        ctx.name_candidates, check_types,
-        concurrency=concurrency, timeout=timeout, tlds=tlds,
+    discovery = await run_discovery(
+        ctx,
+        concurrency=concurrency,
+        timeout=timeout,
     )
 
     profile_name = ctx.scoring_profile or "default"
     profile = resolve_profile(profile_name, ctx.weight_overrides)
-    ranked = rank_candidates(ctx.name_candidates, results, profile)
+    ranked = rank_candidates(discovery.candidates, discovery.results, profile, context=ctx)
 
-    return results, ranked
+    return discovery.results, ranked
 
 
 def check_and_rank_sync(

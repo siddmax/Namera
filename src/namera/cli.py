@@ -10,15 +10,20 @@ from rich.table import Table
 
 from namera.context import BusinessContext
 from namera.core import rank_candidates, resolve_profile
-from namera.output import render_results, render_results_json, render_results_table
-from namera.permutations import generate_permutation_names, names_all_domains_taken
+from namera.output import render_results, render_results_table
+from namera.pipeline import run_discovery
 from namera.presets import TLD_PRESETS, resolve_tld_input
 from namera.providers import register_all
-from namera.providers.base import Availability, CheckType
-from namera.ranking_display import compact_ranked, render_find_ranked, render_ranked_table
+from namera.providers.base import CheckType
+from namera.ranking_display import (
+    build_find_json,
+    compact_ranked,
+    render_find_ranked,
+    render_ranked_table,
+)
 from namera.runner import run_checks, run_checks_multi_batched
 from namera.session import InteractiveSession
-from namera.theme import HEADING, WARNING, availability_style, styled
+from namera.theme import HEADING, WARNING, styled
 
 console = Console()
 
@@ -55,14 +60,8 @@ def _error_exit(
     raise SystemExit(code)
 
 
-def _resolve_format(output_format: str, json_output: bool) -> str:
-    """Resolve output format, giving --json flag precedence as alias.
-
-    Auto-switches to JSON when stdout is not a TTY (i.e., piped to an agent)
-    unless the user explicitly chose a format.
-    """
-    if json_output:
-        return "json"
+def _resolve_format(output_format: str) -> str:
+    """Resolve output format, auto-switching to JSON when stdout is piped."""
     if output_format == "table" and not sys.stdout.isatty():
         return "json"
     return output_format
@@ -115,17 +114,14 @@ def main():
     type=click.Choice(["table", "json", "ndjson", "csv"]),
     default="table", help="Output format",
 )
-@click.option(
-    "--json", "json_output", is_flag=True, hidden=True, help="Shorthand for --format json",
-)
 @click.option("--only-available", "-a", is_flag=True, help="Show only available results")
 @click.option("--verbose", "-v", is_flag=True, help="Include summary/context in JSON output")
 def domain(
-    name: str, tlds: str, output_format: str, json_output: bool,
+    name: str, tlds: str, output_format: str,
     only_available: bool, verbose: bool,
 ):
     """Check domain availability for a name."""
-    output_format = _resolve_format(output_format, json_output)
+    output_format = _resolve_format(output_format)
     tld_list = resolve_tld_input(tlds)
     results = asyncio.run(run_checks(name, [CheckType.DOMAIN], tlds=tld_list))
 
@@ -146,13 +142,10 @@ def domain(
     type=click.Choice(["table", "json", "ndjson", "csv"]),
     default="table", help="Output format",
 )
-@click.option(
-    "--json", "json_output", is_flag=True, hidden=True, help="Shorthand for --format json",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Include summary/context in JSON output")
-def whois(name: str, output_format: str, json_output: bool, verbose: bool):
+def whois(name: str, output_format: str, verbose: bool):
     """Run a WHOIS lookup on a domain."""
-    output_format = _resolve_format(output_format, json_output)
+    output_format = _resolve_format(output_format)
     results = asyncio.run(run_checks(name, [CheckType.WHOIS]))
 
     output = render_results(results, format=output_format, console=console, verbose=verbose)
@@ -167,13 +160,10 @@ def whois(name: str, output_format: str, json_output: bool, verbose: bool):
     type=click.Choice(["table", "json", "ndjson", "csv"]),
     default="table", help="Output format",
 )
-@click.option(
-    "--json", "json_output", is_flag=True, hidden=True, help="Shorthand for --format json",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Include summary/context in JSON output")
-def trademark(name: str, output_format: str, json_output: bool, verbose: bool):
+def trademark(name: str, output_format: str, verbose: bool):
     """Check trademark status for a name."""
-    output_format = _resolve_format(output_format, json_output)
+    output_format = _resolve_format(output_format)
     results = asyncio.run(run_checks(name, [CheckType.TRADEMARK]))
 
     output = render_results(results, format=output_format, console=console, verbose=verbose)
@@ -189,19 +179,16 @@ def trademark(name: str, output_format: str, json_output: bool, verbose: bool):
     type=click.Choice(["table", "json", "ndjson", "csv"]),
     default="table", help="Output format",
 )
-@click.option(
-    "--json", "json_output", is_flag=True, hidden=True, help="Shorthand for --format json",
-)
 @click.option("--only-available", "-a", is_flag=True, help="Show only available results")
 @click.option("--verbose", "-v", is_flag=True, help="Include summary/context in JSON output")
 @click.option("--concurrency", default=15, help="Max concurrent checks")
 @click.option("--timeout", default=15.0, help="Timeout per check in seconds")
 def search(
-    name: str, tlds: str, output_format: str, json_output: bool,
+    name: str, tlds: str, output_format: str,
     only_available: bool, verbose: bool, concurrency: int, timeout: float,
 ):
     """Run all checks (domain, whois, trademark) for a name."""
-    output_format = _resolve_format(output_format, json_output)
+    output_format = _resolve_format(output_format)
     tld_list = resolve_tld_input(tlds)
     all_types = [CheckType.DOMAIN, CheckType.WHOIS, CheckType.TRADEMARK]
     results = asyncio.run(
@@ -233,7 +220,7 @@ _CONTEXT_EXAMPLE = """\
 Required:  name_candidates (list of names to check)
 Recommended: description (what the business does), niche (industry keyword)
 Optional:  target_audience, location, name_style, preferred_tlds,
-           max_domain_price, checks (domain/whois/trademark/social)\
+           checks (domain/whois/trademark/social)\
 """
 
 
@@ -245,7 +232,7 @@ Optional:  target_audience, location, name_style, preferred_tlds,
         "Required: name_candidates. "
         "Recommended: description, niche. "
         "Optional: target_audience, location, name_style, preferred_tlds, "
-        "max_domain_price, checks. "
+        "checks. "
         "Run with --example to see full schema."
     ),
 )
@@ -254,9 +241,6 @@ Optional:  target_audience, location, name_style, preferred_tlds,
     "--format", "output_format",
     type=click.Choice(["table", "json", "ndjson", "csv"]),
     default="table", help="Output format",
-)
-@click.option(
-    "--json", "json_output", is_flag=True, hidden=True, help="Shorthand for --format json",
 )
 @click.option("--only-available", "-a", is_flag=True, help="Show only available results")
 @click.option(
@@ -267,7 +251,7 @@ Optional:  target_audience, location, name_style, preferred_tlds,
 @click.option("--concurrency", default=15, help="Max concurrent checks")
 @click.option("--timeout", default=15.0, help="Timeout per check in seconds")
 def find(
-    context_json: str | None, example: bool, output_format: str, json_output: bool,
+    context_json: str | None, example: bool, output_format: str,
     only_available: bool, filter_trademarked: bool, verbose: bool,
     concurrency: int, timeout: float,
 ):
@@ -281,13 +265,18 @@ def find(
     if example:
         click.echo(_CONTEXT_EXAMPLE)
         return
-    output_format = _resolve_format(output_format, json_output)
+    output_format = _resolve_format(output_format)
     json_mode = _is_json_mode(output_format)
     interactive = context_json is None and sys.stdin.isatty()
     ctx = _resolve_context(context_json, json_mode=json_mode)
-    tlds = ctx.resolve_tlds()
     try:
-        check_types = ctx.resolve_check_types()
+        discovery = asyncio.run(
+            run_discovery(
+                ctx,
+                concurrency=concurrency,
+                timeout=timeout,
+            )
+        )
     except ValueError as e:
         _error_exit(
             EXIT_INPUT_ERROR,
@@ -297,7 +286,7 @@ def find(
             json_mode=json_mode,
         )
 
-    if not ctx.name_candidates:
+    if not discovery.candidates:
         _error_exit(
             EXIT_INPUT_ERROR, "no_candidates",
             "No name candidates provided.",
@@ -305,46 +294,16 @@ def find(
             json_mode=json_mode,
         )
 
-    if output_format == "table" and ctx.name_candidates:
-        console.print(f"\n{styled(f'Checking {len(ctx.name_candidates)} name(s)...', HEADING)}\n")
-
-    results = asyncio.run(
-        run_checks_multi_batched(
-            ctx.name_candidates, check_types,
-            concurrency=concurrency,
-            timeout=timeout,
-            tlds=tlds,
-            price_max=ctx.max_domain_price,
-        )
-    )
-
-    # Auto-permute names where all preferred-TLD domains are taken
-    taken_names = names_all_domains_taken(results, tlds)
-    if taken_names:
-        perm_names = generate_permutation_names(taken_names)
-        existing = {n.lower() for n in ctx.name_candidates}
-        perm_names = [n for n in perm_names if n.lower() not in existing]
-        if perm_names:
-            if output_format == "table":
-                console.print(
-                    styled(f"Trying variations for {len(taken_names)} taken name(s)...\n", HEADING)
-                )
-            perm_results = asyncio.run(
-                run_checks_multi_batched(
-                    perm_names, check_types,
-                    concurrency=concurrency,
-                    timeout=timeout,
-                    tlds=tlds,
-                    price_max=ctx.max_domain_price,
-                )
-            )
-            results.extend(perm_results)
-            ctx.name_candidates.extend(perm_names)
+    if output_format == "table" and discovery.candidates:
+        console.print(f"\n{styled(f'Checking {len(discovery.candidates)} name(s)...', HEADING)}\n")
 
     # Filter trademarked names by canonical candidate identity.
     from namera.filters import filter_trademarked_results, get_trademark_risk_names
 
-    risky_names = get_trademark_risk_names(results)
+    results = discovery.results
+    ctx = discovery.context
+    tlds = discovery.tlds
+    risky_names = discovery.risky_names or get_trademark_risk_names(results)
 
     if risky_names and output_format == "table":
         console.print(
@@ -361,11 +320,22 @@ def find(
 
     # Interactive mode: rank and show top 10
     if interactive and output_format == "table":
-        profile = resolve_profile("default")
-        ranked = rank_candidates(ctx.name_candidates, results, profile)
+        profile = resolve_profile(ctx.scoring_profile or "default", ctx.weight_overrides)
+        ranked = rank_candidates(discovery.candidates, results, profile, context=ctx)
         render_find_ranked(ranked, tlds, console)
     elif output_format == "json":
-        click.echo(render_results_json(results, ctx, verbose=verbose))
+        profile = resolve_profile(ctx.scoring_profile or "default", ctx.weight_overrides)
+        ranked = rank_candidates(discovery.candidates, results, profile, context=ctx)
+
+        from namera.telemetry import log_session
+        log_session(discovery.candidates, ranked, profile.name, ctx.niche)
+
+        has_rate_limit = any(r.is_rate_limited for r in results)
+        payload = build_find_json(
+            ranked, tlds, profile, ctx, risky_names or None,
+            rate_limited=has_rate_limit,
+        )
+        click.echo(json_mod.dumps(payload, separators=(",", ":")))
     elif output_format == "table":
         render_results_table(console, results, ctx)
     else:
@@ -377,7 +347,7 @@ def find(
     errored = [r for r in results if r.error]
     if errored and len(errored) == len(results):
         raise SystemExit(EXIT_NETWORK_ERROR)
-    elif errored:
+    if any(r.is_rate_limited for r in results):
         raise SystemExit(EXIT_PARTIAL_FAILURE)
 
 
@@ -391,14 +361,11 @@ def find(
     type=click.Choice(["table", "json"]),
     default="table", help="Output format",
 )
-@click.option(
-    "--json", "json_output", is_flag=True, hidden=True, help="Shorthand for --format json",
-)
 @click.option("--concurrency", default=15, help="Max concurrent checks")
 @click.option("--timeout", default=15.0, help="Timeout per check in seconds")
 def rank(
     names: tuple[str, ...], context_json: str | None, profile_name: str,
-    tlds: str, output_format: str, json_output: bool, concurrency: int, timeout: float,
+    tlds: str, output_format: str, concurrency: int, timeout: float,
 ):
     """Rank name candidates by composite score.
 
@@ -407,10 +374,10 @@ def rank(
 
     Examples:\n
       namera rank voxly dataprime nimbus\n
-      namera rank voxly dataprime --profile fintech --json\n
+      namera rank voxly dataprime --profile fintech --format json\n
       namera rank --context '{"name_candidates": ["voxly"], "niche": "fintech"}'
     """
-    output_format = _resolve_format(output_format, json_output)
+    output_format = _resolve_format(output_format)
     json_mode = _is_json_mode(output_format)
 
     # Resolve names from args or context
@@ -428,10 +395,12 @@ def rank(
         if ctx.scoring_profile:
             profile_name = ctx.scoring_profile
         tld_list = ctx.resolve_tlds()
+        check_types = ctx.resolve_check_types()
     elif names:
         name_list = list(names)
         ctx = BusinessContext(name_candidates=name_list)
         tld_list = resolve_tld_input(tlds)
+        check_types = [CheckType.DOMAIN, CheckType.WHOIS, CheckType.TRADEMARK, CheckType.SOCIAL]
     else:
         _error_exit(
             EXIT_INPUT_ERROR, "no_candidates",
@@ -457,19 +426,16 @@ def rank(
         msg = f"Ranking {len(name_list)} name(s) with profile: {profile.name}"
         console.print(f"\n{styled(msg, HEADING)}\n")
 
-    # Run all checks for all names concurrently
-    all_types = [CheckType.DOMAIN, CheckType.WHOIS, CheckType.TRADEMARK, CheckType.SOCIAL]
     results = asyncio.run(
         run_checks_multi_batched(
-            name_list, all_types,
+            name_list, check_types,
             concurrency=concurrency,
             timeout=timeout,
             tlds=tld_list,
-            price_max=ctx.max_domain_price,
         )
     )
 
-    ranked = rank_candidates(name_list, results, profile)
+    ranked = rank_candidates(name_list, results, profile, context=ctx)
 
     # Log session (non-blocking, best-effort)
     from namera.telemetry import log_session
@@ -485,24 +451,6 @@ def rank(
         render_ranked_table(ranked, profile, console)
 
 
-async def _run_checks_for_domains(domains: list[str]):
-    """Check availability for a list of fully-qualified domain names."""
-    import socket as _socket
-
-    from namera.providers.base import Availability as _Av
-
-    async def _check_one(domain_name: str) -> dict:
-        loop = asyncio.get_running_loop()
-        try:
-            await loop.run_in_executor(None, _socket.gethostbyname, domain_name)
-            return {"domain": domain_name, "available": _Av.TAKEN.value}
-        except _socket.gaierror:
-            return {"domain": domain_name, "available": _Av.AVAILABLE.value}
-
-    tasks = [_check_one(d) for d in domains]
-    return await asyncio.gather(*tasks)
-
-
 @main.command("compose")
 @click.argument("keywords", nargs=-1, required=True)
 @click.option("--tlds", default="com", help="Preset name or comma-separated TLDs")
@@ -516,10 +464,15 @@ async def _run_checks_for_domains(domains: list[str]):
 )
 @click.option("--max-length", default=63, help="Max domain label length")
 @click.option("--check", is_flag=True, help="Also check availability (runs domain checks)")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option(
+    "--format", "output_format",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
 def compose_cmd(
     keywords, tlds, prefix, suffix, common_prefixes, common_suffixes,
-    max_length, check, json_output,
+    max_length, check, output_format,
 ):
     """Generate domain name permutations from keywords.
 
@@ -528,8 +481,7 @@ def compose_cmd(
       namera compose namera --prefix get --prefix try --suffix hq\n
       namera compose namera --common-prefixes --common-suffixes --check
     """
-    from namera.composer import ComposerConfig
-    from namera.composer import compose as run_compose
+    from namera.composer import ComposerConfig, compose, compose_labels
 
     tld_list = resolve_tld_input(tlds)
     config = ComposerConfig(
@@ -542,39 +494,31 @@ def compose_cmd(
         use_common_suffixes=common_suffixes,
     )
 
-    domains = run_compose(config)
+    labels = compose_labels(config)
+    domains = compose(config)
 
     if not check:
-        if json_output:
+        if output_format == "json":
             click.echo(json_mod.dumps({"domains": domains}, separators=(",", ":")))
         else:
             for d in domains:
                 click.echo(d)
             click.echo(f"\n{len(domains)} domain(s) generated.", err=True)
     else:
-        domain_results = asyncio.run(_run_checks_for_domains(domains))
-
-        if json_output:
-            output_data = [
-                {"query": r["domain"], "status": r["available"]}
-                for r in domain_results
-            ]
-            click.echo(json_mod.dumps({"results": output_data}, separators=(",", ":")))
-        else:
-            table = Table(title="Compose + Check")
-            table.add_column("Domain", style="bold")
-            table.add_column("Status")
-
-            for r in domain_results:
-                avail = r["available"]
-                if isinstance(avail, bool):
-                    avail = Availability.AVAILABLE if avail else Availability.TAKEN
-                else:
-                    avail = Availability(avail)
-                label, st = availability_style(avail)
-                table.add_row(r["domain"], styled(label, st))
-
-            console.print(table)
+        results = asyncio.run(
+            run_checks_multi_batched(
+                labels,
+                [CheckType.DOMAIN],
+                tlds=tld_list,
+            )
+        )
+        output = render_results(
+            results,
+            format="json" if output_format == "json" else "table",
+            console=console,
+        )
+        if output is not None:
+            click.echo(output)
 
 
 @main.command()

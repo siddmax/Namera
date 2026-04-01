@@ -2,19 +2,120 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.console import Console
 from rich.table import Table
 
 from namera.scoring.models import RankedName, ScoringProfile
 from namera.theme import TABLE_TITLE, WARNING, styled
 
+if TYPE_CHECKING:
+    from namera.context import BusinessContext
+
 FIND_TOP_N = 10
+
+
+def build_find_json(
+    ranked: list[RankedName],
+    tlds: list[str],
+    profile: ScoringProfile,
+    context: BusinessContext | None = None,
+    trademark_risks: list[str] | None = None,
+    rate_limited: bool = False,
+) -> dict:
+    """Build comprehensive JSON output combining find + rank for agents.
+
+    Returns a single payload with ranked results, filtered names, and summary.
+    """
+    ranked_entries = []
+    filtered_entries = []
+
+    for r in ranked:
+        if r.filtered_out:
+            filtered_entries.append({"name": r.name, "reason": r.filter_reason})
+            continue
+
+        entry: dict = {
+            "rank": len(ranked_entries) + 1,
+            "name": r.name,
+            "score": round(r.composite_score * 100, 1),
+        }
+
+        # Domain availability per TLD
+        domains = {}
+        for tld in tlds:
+            sig = r.signals.get(f"domain_{tld}")
+            if sig:
+                if sig.value >= 1.0:
+                    domains[tld] = "available"
+                elif sig.value == 0.0:
+                    domains[tld] = "taken"
+                else:
+                    domains[tld] = "unknown"
+        if domains:
+            entry["domains"] = domains
+
+        # Trademark status
+        tm = r.signals.get("trademark")
+        if tm:
+            if tm.value >= 1.0:
+                entry["trademark"] = "clear"
+            elif tm.value == 0.0:
+                entry["trademark"] = "risk"
+            else:
+                entry["trademark"] = "unknown"
+
+        # Social handle availability
+        social = {}
+        for key, sig in r.signals.items():
+            if key.startswith("social_") and key != "social_availability":
+                platform = key.removeprefix("social_")
+                social[platform] = "available" if sig.value >= 1.0 else "taken"
+        if social:
+            entry["social"] = social
+
+        # Quality signals
+        quality = {}
+        for k in ("length", "pronounceability", "string_features"):
+            sig = r.signals.get(k)
+            if sig and sig.value > 0:
+                quality[k] = round(sig.value * 100, 1)
+        if quality:
+            entry["quality"] = quality
+
+        ranked_entries.append(entry)
+
+    payload: dict = {"ranked": ranked_entries}
+
+    if filtered_entries:
+        payload["filtered"] = filtered_entries
+
+    if trademark_risks:
+        payload["trademark_risks"] = trademark_risks
+
+    summary: dict = {
+        "candidates_checked": len(ranked),
+        "viable": len(ranked_entries),
+        "filtered_out": len(filtered_entries),
+        "profile": profile.name,
+        "tlds_checked": tlds,
+    }
+    if rate_limited:
+        summary["rate_limited"] = True
+        summary["rate_limited_note"] = (
+            "Trademark checks were rate-limited. "
+            "Trademark scores may be incomplete. Retry after 60s."
+        )
+    payload["summary"] = summary
+
+    return payload
 
 
 def compact_ranked(r: RankedName) -> dict:
     """Compact serialization of a RankedName for agent consumption."""
-    entry: dict = {"name": r.name, "score": round(r.composite_score, 3)}
-    sigs = {k: round(v.value, 2) for k, v in r.signals.items() if v.value > 0}
+    entry: dict = {"name": r.name, "score": round(r.composite_score * 100, 1)}
+    sigs = {k: round(v.value * 100, 1) for k, v in r.signals.items() if v.value > 0}
     if sigs:
         entry["signals"] = sigs
     if r.filtered_out:
@@ -108,22 +209,25 @@ def render_ranked_table(
     for i, r in enumerate(ranked, 1):
         if r.filtered_out:
             score_str = styled("FILTERED", WARNING)
-        elif r.composite_score >= 0.7:
-            score_str = styled(f"{r.composite_score:.2f}", "bright_green")
-        elif r.composite_score >= 0.4:
-            score_str = styled(f"{r.composite_score:.2f}", "bright_yellow")
         else:
-            score_str = styled(f"{r.composite_score:.2f}", "red")
+            score_int = int(r.composite_score * 100)
+            if score_int >= 70:
+                score_str = styled(str(score_int), "bright_green")
+            elif score_int >= 40:
+                score_str = styled(str(score_int), "bright_yellow")
+            else:
+                score_str = styled(str(score_int), "red")
 
         def _signal_display(name: str) -> str:
             sig = r.signals.get(name)
             if sig is None:
                 return styled("-", "dim")
-            if sig.value >= 0.7:
-                return styled(f"{sig.value:.1f}", "bright_green")
-            if sig.value >= 0.4:
-                return styled(f"{sig.value:.1f}", "bright_yellow")
-            return styled(f"{sig.value:.1f}", "red")
+            val = int(sig.value * 100)
+            if val >= 70:
+                return styled(str(val), "bright_green")
+            if val >= 40:
+                return styled(str(val), "bright_yellow")
+            return styled(str(val), "red")
 
         table.add_row(
             str(i),

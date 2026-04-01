@@ -69,12 +69,22 @@ def normalize_whois(result: ProviderResult) -> list[Signal]:
 
 
 def normalize_trademark(result: ProviderResult) -> list[Signal]:
-    """Normalize trademark check results."""
+    """Normalize trademark check results into provider-specific signals.
+
+    Emits ``trademark_exact`` or ``trademark_fuzzy`` depending on provider so
+    that exact USPTO conflicts are never overwritten by a later fuzzy result.
+    The engine synthesizes a conservative ``trademark`` aggregate via min().
+    """
     signals = []
 
-    # Base availability signal
+    # Emit provider-specific signal so exact and fuzzy don't overwrite each other
+    if result.provider_name == "trademark-similarity":
+        signal_name = "trademark_fuzzy"
+    else:
+        signal_name = "trademark_exact"
+
     signals.append(Signal(
-        name="trademark",
+        name=signal_name,
         value=_AVAILABILITY_SCORES.get(result.available, 0.3),
         raw=result.available.value,
         source=result.provider_name,

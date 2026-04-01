@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from namera.providers.base import Availability, ProviderResult
+from namera.providers.base import Availability, CheckType, ProviderResult
 
 
 def normalize_candidate_name(value: str) -> str:
@@ -91,3 +91,31 @@ def summarize_domain_statuses(values: Iterable[object]) -> Availability:
     if all(status == Availability.TAKEN.value for status in statuses):
         return Availability.TAKEN
     return Availability.UNKNOWN
+
+
+def candidate_names_without_available_domains(
+    results: Iterable[ProviderResult],
+    preferred_tlds: Sequence[str],
+) -> list[str]:
+    """Return candidate names whose preferred-TLD domains are all unavailable."""
+    preferred = {tld.lower().lstrip(".") for tld in preferred_tlds}
+    has_available: set[str] = set()
+    checked: list[str] = []
+    seen_checked: set[str] = set()
+
+    for result in results:
+        if result.check_type != CheckType.DOMAIN:
+            continue
+
+        candidate = result_candidate_key(result)
+        if candidate not in seen_checked:
+            seen_checked.add(candidate)
+            checked.append(candidate)
+
+        for domain in result.details.get("domains", []):
+            domain_name = str(domain.get("domain", ""))
+            tld = domain_name.rsplit(".", 1)[-1].lower() if "." in domain_name else ""
+            if tld in preferred and is_available_domain_status(domain.get("available")):
+                has_available.add(candidate)
+
+    return [candidate for candidate in checked if candidate not in has_available]

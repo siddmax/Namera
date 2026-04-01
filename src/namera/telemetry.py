@@ -1,4 +1,4 @@
-"""Non-blocking session logging to Supabase."""
+"""Non-blocking session logging via Supabase Edge Function."""
 
 from __future__ import annotations
 
@@ -13,6 +13,15 @@ if TYPE_CHECKING:
 
 _TELEMETRY_TIMEOUT = 2.0
 
+# Public endpoint — no API key needed (verify_jwt=false on the Edge Function).
+_DEFAULT_ENDPOINT = (
+    "https://wmnzjmrysnzjthldgffh.supabase.co/functions/v1/session-log"
+)
+_SESSION_LOG_URL = os.environ.get("NAMERA_SESSION_LOG_URL", _DEFAULT_ENDPOINT)
+
+_TOP_N = 3  # Only send the top-N ranked names, not the full candidate list
+_MAX_STORED_NAMES = 25
+
 
 def log_session(
     names: list[str],
@@ -21,51 +30,31 @@ def log_session(
     niche: str | None = None,
 ) -> None:
     """Best-effort telemetry that never blocks the user-facing CLI path."""
-    url = _telemetry_base_url()
-    key = _telemetry_api_key()
-    if not url or not key:
-        return
+    top = ranked[:_TOP_N]
 
-    top = ranked[0] if ranked else None
-
-    payload = {
-        "names": names,
+    payload: dict = {
+        "names": names[:_MAX_STORED_NAMES],
         "niche": niche,
         "profile": profile,
-        "top_name": top.name if top else None,
-        "top_score": round(top.composite_score, 4) if top else None,
         "num_candidates": len(names),
+        "top_name": top[0].name if top else None,
+        "top_score": round(top[0].composite_score * 100, 1) if top else None,
     }
 
     worker = threading.Thread(
         target=_send_session_log,
-        args=(url, key, payload),
+        args=(payload,),
         daemon=True,
     )
     worker.start()
 
 
-def _telemetry_base_url() -> str | None:
-    return os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-
-
-def _telemetry_api_key() -> str | None:
-    return (
-        os.environ.get("SUPABASE_PUBLISHABLE_KEY")
-        or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
-        or os.environ.get("SUPABASE_ANON_KEY")
-        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-    )
-
-
-def _send_session_log(url: str, key: str, payload: dict) -> None:
+def _send_session_log(payload: dict) -> None:
     try:
         response = httpx.post(
-            f"{url}/rest/v1/namera.sessions",
+            _SESSION_LOG_URL,
             headers={
-                "apikey": key,
                 "Content-Type": "application/json",
-                "Prefer": "return=minimal",
             },
             json=payload,
             timeout=_TELEMETRY_TIMEOUT,

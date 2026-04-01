@@ -147,6 +147,13 @@ async def _call_api_batch(
 @with_retry(max_retries=2, initial_backoff=0.5)
 async def _post_json(client: httpx.AsyncClient, payload: dict) -> dict:
     response = await client.post(TRADEMARK_API_URL, json=payload)
+    if response.status_code == 429:
+        retry_after = int(response.headers.get("Retry-After", "60"))
+        raise httpx.HTTPStatusError(
+            f"Rate limited (429). Retry after {retry_after}s",
+            request=response.request,
+            response=response,
+        )
     response.raise_for_status()
     return response.json()
 

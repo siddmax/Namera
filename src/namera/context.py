@@ -41,12 +41,13 @@ _STRING_FIELDS = {
     "name_style",
     "scoring_profile",
 }
-_LIST_STRING_FIELDS = {"name_candidates", "preferred_tlds", "checks"}
+_LIST_STRING_FIELDS = {"name_candidates", "keywords", "preferred_tlds", "checks"}
 
 
 @dataclass
 class BusinessContext:
     name_candidates: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
 
     # Business identity
     niche: str | None = None
@@ -59,7 +60,6 @@ class BusinessContext:
 
     # Domain preferences
     preferred_tlds: list[str] | None = None
-    max_domain_price: float | None = None
     name_style: str | None = None
 
     # Check selection
@@ -90,8 +90,6 @@ class BusinessContext:
                 normalized[field_name] = _normalize_optional_string(field_name, value)
             elif field_name in _LIST_STRING_FIELDS:
                 normalized[field_name] = _normalize_string_list(field_name, value)
-            elif field_name == "max_domain_price":
-                normalized[field_name] = _normalize_price(value)
             elif field_name == "weight_overrides":
                 normalized[field_name] = _normalize_weight_overrides(value)
             else:
@@ -179,18 +177,6 @@ def _normalize_string_list(field_name: str, value: object) -> list[str]:
                 normalized.append(item_value)
 
     return list(dict.fromkeys(normalized))
-
-
-def _normalize_price(value: object) -> float | None:
-    if value is None:
-        return None
-    if not isinstance(value, (int, float)):
-        raise TypeError("max_domain_price must be numeric.")
-
-    normalized = float(value)
-    if normalized < 0:
-        raise ValueError("max_domain_price must be non-negative.")
-    return normalized
 
 
 def _normalize_weight_overrides(value: object) -> dict[str, float] | None:

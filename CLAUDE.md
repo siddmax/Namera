@@ -28,7 +28,6 @@ src/namera/
   providers/
     base.py           # Provider ABC, ProviderResult, ProviderRegistry, CheckType enum
     domain.py         # DNS-based domain availability (socket.gethostbyname)
-    domain_api.py     # GoDaddy API (availability + pricing, falls back to DNS)
     rdap.py           # RDAP lookup with cascading fallbacks (RDAP → DNS → WHOIS)
     whois.py          # Raw socket WHOIS (port 43)
     social.py         # Social handle checks (GitHub, Twitter/X, Instagram)
@@ -56,11 +55,11 @@ namera search <name>          # Run all checks (domain + whois + trademark)
 # Context-aware discovery (multiple names, business context)
 namera find                                    # Interactive wizard
 namera find --context '{"name_candidates": ["name1"], "niche": "fintech"}'
-namera find --json --context '...'             # Agent-friendly JSON output
+namera find --format json --context '...'      # Agent-friendly JSON output
 
 # Scoring and ranking
 namera rank name1 name2 name3                  # Rank names by composite score
-namera rank --profile fintech --json name1 name2  # Use a scoring profile
+namera rank --profile fintech --format json name1 name2  # Use a scoring profile
 namera rank --context '{"name_candidates": [...], "niche": "fintech"}'
 
 # Domain name generation
@@ -70,26 +69,29 @@ namera compose keyword --prefix get --suffix hq --check # Generate + check avail
 # TLD presets
 namera presets                                 # Show all available TLD presets
 
-# All commands support --format table|json|ndjson|csv and --json shorthand
+# Most commands support --format table|json|ndjson|csv
+# `compose` supports --format text|json
 # Output auto-switches to JSON when stdout is piped (agent-friendly)
-namera domain myname --json
+namera domain myname --format json
 namera search myname --format csv
-namera find --json --context '...' | jq .
+namera find --format json --context '...' | jq .
 ```
 
 ## Agent Integration
 
-Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
+Agents call `namera find --format json --context '<json>'` with a BusinessContext JSON.
+**One command does everything:** compose name variations from keywords, check availability
+across domains/trademarks/social, rank by composite score, and return structured results.
 
 ```json
 {
   "description": "A mobile-first budget tracking app that helps users split expenses with friends and build savings habits",
   "name_candidates": ["neopay", "zestmoney"],
+  "keywords": ["pay", "split"],
   "niche": "fintech",
   "target_audience": "millennials",
   "location": "US",
   "preferred_tlds": ["com", "io"],
-  "max_domain_price": 50.0,
   "name_style": "short",
   "checks": ["domain", "whois", "trademark"],
   "scoring_profile": "fintech",
@@ -97,8 +99,10 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
 }
 ```
 
-**Required fields:**
-- `name_candidates` — the names to check availability for
+**Required:** at least one of `name_candidates` or `keywords`
+- `name_candidates` — explicit names to check
+- `keywords` — base words for auto-generating variations (e.g., `["pay"]` → pay, getpay, payapp, payhq, trypay, etc.)
+  When both are provided, composed names are merged with explicit candidates (deduplicated).
 
 **Recommended fields (improve results significantly):**
 - `description` — freeform text describing what the business does. Can be a sentence, paragraph, or pasted business doc. This is the primary context used for relevance scoring and name evaluation.
@@ -107,19 +111,46 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
 **Optional fields:**
 - `target_audience`, `location`, `name_style` — refine scoring
 - `preferred_tlds` — override auto-detected TLDs (e.g., `["com", "io"]`). Can also be a preset name (e.g., `["tech"]`)
-- `max_domain_price` — budget filter
-- `checks` — limit to specific providers (default: domain, whois, trademark). Values: `domain`, `whois`, `trademark`, `social`
+- `checks` — limit to specific providers. Values: `domain`, `whois`, `trademark`, `social`
 - `scoring_profile` — ranking profile name: `default`, `startup-saas`, `fintech`, `consumer`, `developer-tools`
 - `weight_overrides` — override individual signal weights (merged with profile weights)
 - `industry` — additional industry context
 
 **Input modes:** `--context` flag > stdin pipe > interactive wizard (auto-detected).
 
+**JSON output format** (returned by `find --format json`):
+```json
+{
+  "ranked": [
+    {
+      "rank": 1,
+      "name": "splitly",
+      "score": 82.1,
+      "domains": {"com": "available", "io": "taken"},
+      "trademark": "clear",
+      "social": {"github": "available", "twitter": "taken"},
+      "quality": {"length": 90.0, "pronounceability": 75.0}
+    }
+  ],
+  "filtered": [
+    {"name": "badname", "reason": "trademark below threshold (0.00 < 0.5)"}
+  ],
+  "trademark_risks": ["badname"],
+  "summary": {
+    "candidates_checked": 5,
+    "viable": 3,
+    "filtered_out": 1,
+    "profile": "fintech",
+    "tlds_checked": ["com", "io"]
+  }
+}
+```
+
 **Typical agent workflow:**
 1. Gather business context from the user (what they're building, who it's for)
-2. Generate name candidates
-3. Call `namera find --json --context '<json>'` with description + candidates
-4. Parse JSON results to recommend the best available names
+2. Generate name candidates (or pass keywords to let Namera compose variations)
+3. Call `namera find --format json --context '<json>'` — single call does compose + check + rank
+4. Parse `ranked` array to recommend the best available names
 
 ## Supabase Setup
 
@@ -153,12 +184,11 @@ doppler run -- python scripts/import_trademarks.py --live-only
 
 ## Providers
 
-7 providers auto-register via `__init_subclass__` (imported in `cli.py`):
+6 providers auto-register via `__init_subclass__` (imported in `cli.py`):
 
 | Provider | Check Type | Source |
 |----------|-----------|--------|
 | `dns` | DOMAIN | DNS socket resolution, no API key |
-| `domain-api` | DOMAIN | GoDaddy API (availability + pricing), falls back to DNS |
 | `rdap` | DOMAIN | RDAP → DNS → raw WHOIS cascading fallback |
 | `whois` | WHOIS | Raw socket WHOIS (port 43) |
 | `social` | SOCIAL | HTTP HEAD checks (GitHub, Twitter/X, Instagram) |
@@ -166,7 +196,6 @@ doppler run -- python scripts/import_trademarks.py --live-only
 | `trademark-similarity` | TRADEMARK | Supabase Edge Function (trigram fuzzy match) |
 
 **Environment variables for providers:**
-- `GODADDY_API_KEY`, `GODADDY_API_SECRET`, `GODADDY_ENV` — GoDaddy API (domain-api provider)
 - `NAMERA_TRADEMARK_API_URL` — override trademark endpoint (default: Supabase Edge Function)
 
 ## Scoring Engine
@@ -209,4 +238,4 @@ ruff check src/ tests/
 - Keep API keys in env vars, never hardcode
 - Provider names should be lowercase kebab-case (e.g., `whois`, `trademark-stub`)
 - BusinessContext is the single input object for `find` — extend it for new fields
-- JSON output via `--json` flag on all commands — use `output.py` for rendering
+- JSON output via `--format json` — use `output.py` for rendering

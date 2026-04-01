@@ -28,7 +28,6 @@ src/namera/
   providers/
     base.py           # Provider ABC, ProviderResult, ProviderRegistry, CheckType enum
     domain.py         # DNS-based domain availability (socket.gethostbyname)
-    domain_api.py     # GoDaddy API (availability + pricing, falls back to DNS)
     rdap.py           # RDAP lookup with cascading fallbacks (RDAP → DNS → WHOIS)
     whois.py          # Raw socket WHOIS (port 43)
     social.py         # Social handle checks (GitHub, Twitter/X, Instagram)
@@ -56,11 +55,11 @@ namera search <name>          # Run all checks (domain + whois + trademark)
 # Context-aware discovery (multiple names, business context)
 namera find                                    # Interactive wizard
 namera find --context '{"name_candidates": ["name1"], "niche": "fintech"}'
-namera find --json --context '...'             # Agent-friendly JSON output
+namera find --format json --context '...'      # Agent-friendly JSON output
 
 # Scoring and ranking
 namera rank name1 name2 name3                  # Rank names by composite score
-namera rank --profile fintech --json name1 name2  # Use a scoring profile
+namera rank --profile fintech --format json name1 name2  # Use a scoring profile
 namera rank --context '{"name_candidates": [...], "niche": "fintech"}'
 
 # Domain name generation
@@ -70,16 +69,17 @@ namera compose keyword --prefix get --suffix hq --check # Generate + check avail
 # TLD presets
 namera presets                                 # Show all available TLD presets
 
-# All commands support --format table|json|ndjson|csv and --json shorthand
+# Most commands support --format table|json|ndjson|csv
+# `compose` supports --format text|json
 # Output auto-switches to JSON when stdout is piped (agent-friendly)
-namera domain myname --json
+namera domain myname --format json
 namera search myname --format csv
-namera find --json --context '...' | jq .
+namera find --format json --context '...' | jq .
 ```
 
 ## Agent Integration
 
-Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
+Agents call `namera find --format json --context '<json>'` with a BusinessContext JSON:
 
 ```json
 {
@@ -89,7 +89,6 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
   "target_audience": "millennials",
   "location": "US",
   "preferred_tlds": ["com", "io"],
-  "max_domain_price": 50.0,
   "name_style": "short",
   "checks": ["domain", "whois", "trademark"]
 }
@@ -105,7 +104,6 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
 **Optional fields:**
 - `target_audience`, `location`, `name_style` — refine scoring
 - `preferred_tlds` — override auto-detected TLDs (e.g., `["com", "io"]`)
-- `max_domain_price` — budget filter
 - `checks` — limit to specific providers (default: all). Values: `domain`, `whois`, `trademark`, `social`
 
 **Input modes:** `--context` flag > stdin pipe > interactive wizard (auto-detected).
@@ -113,7 +111,7 @@ Agents call `namera find --json --context '<json>'` with a BusinessContext JSON:
 **Typical agent workflow:**
 1. Gather business context from the user (what they're building, who it's for)
 2. Generate name candidates
-3. Call `namera find --json --context '<json>'` with description + candidates
+3. Call `namera find --format json --context '<json>'` with description + candidates
 4. Parse JSON results to recommend the best available names
 
 ## Supabase Setup
@@ -170,4 +168,4 @@ ruff check src/ tests/
 - Keep API keys in env vars, never hardcode
 - Provider names should be lowercase kebab-case (e.g., `whois`, `trademark-stub`)
 - BusinessContext is the single input object for `find` — extend it for new fields
-- JSON output via `--json` flag on all commands — use `output.py` for rendering
+- JSON output via `--format json` — use `output.py` for rendering

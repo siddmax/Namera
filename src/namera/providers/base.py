@@ -29,6 +29,14 @@ class ProviderResult:
     details: dict = field(default_factory=dict)
     error: str | None = None
 
+    @property
+    def is_rate_limited(self) -> bool:
+        """True when the provider returned a 429 / rate-limit error."""
+        if not self.error:
+            return False
+        e = self.error.lower()
+        return "429" in e or "rate limit" in e
+
 
 class Provider(ABC):
     """Base class for all lookup providers."""

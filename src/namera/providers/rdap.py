@@ -84,19 +84,28 @@ class RdapProvider(Provider):
 
     async def check(self, query: str, **kwargs) -> ProviderResult:
         tlds = kwargs.get("tlds", ["com", "net", "org", "io", "dev"])
-        results = []
+        client = kwargs.get("_http_client")
 
+        if client:
+            return await self._check_all_tlds(client, query, tlds)
         async with httpx.AsyncClient() as client:
-            await _load_rdap_servers(client)
+            return await self._check_all_tlds(client, query, tlds)
 
-            for tld in tlds:
-                domain = f"{query}.{tld}" if "." not in query else query
-                availability, method = await self._check_domain(client, domain)
-                results.append({
-                    "domain": domain,
-                    "available": availability.value,
-                    "method": method,
-                })
+    async def _check_all_tlds(
+        self, client: httpx.AsyncClient, query: str, tlds: list[str]
+    ) -> ProviderResult:
+        await _load_rdap_servers(client)
+
+        domains = [
+            f"{query}.{tld}" if "." not in query else query for tld in tlds
+        ]
+        checks = await asyncio.gather(
+            *(self._check_domain(client, domain) for domain in domains)
+        )
+        results = [
+            {"domain": domain, "available": avail.value, "method": method}
+            for domain, (avail, method) in zip(domains, checks)
+        ]
 
         overall = summarize_domain_statuses(r["available"] for r in results)
         return ProviderResult(

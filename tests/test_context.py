@@ -16,7 +16,6 @@ class TestBusinessContext:
             "target_audience": "millennials",
             "location": "US",
             "preferred_tlds": ["com", "io"],
-            "max_domain_price": 50.0,
             "name_style": "short",
             "checks": ["domain", "whois"],
         }
