@@ -32,6 +32,7 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
+    environment: pypi
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +71,9 @@ jobs:
 
       - name: Build
         run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create GitHub Release
         env:
