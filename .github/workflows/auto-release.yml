@@ -32,7 +32,6 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
-    environment: pypi
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,9 +71,6 @@ jobs:
       - name: Build
         run: uv build
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,3 +78,24 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" dist/* \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes
+
+      - name: Publish to MCP Registry
+        run: |
+          # Install mcp-publisher
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+
+          # Update server.json with the new version
+          VERSION="${{ steps.version.outputs.version }}"
+          python3 -c "
+          import json
+          with open('server.json') as f:
+              data = json.load(f)
+          data['packages'][0]['version'] = '$VERSION'
+          with open('server.json', 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          "
+
+          # Authenticate via GitHub OIDC and publish
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

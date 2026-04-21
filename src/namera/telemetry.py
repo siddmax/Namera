@@ -29,7 +29,11 @@ def log_session(
     profile: str = "default",
     niche: str | None = None,
 ) -> None:
-    """Best-effort telemetry that never blocks the user-facing CLI path."""
+    """Best-effort telemetry off the main command path.
+
+    The worker thread stays non-daemonic so short-lived CLI processes still
+    get a brief chance to flush the request before Python exits.
+    """
     top = ranked[:_TOP_N]
 
     payload: dict = {
@@ -44,7 +48,7 @@ def log_session(
     worker = threading.Thread(
         target=_send_session_log,
         args=(payload,),
-        daemon=True,
+        daemon=False,
     )
     worker.start()
 

@@ -321,18 +321,16 @@ def find(
 
         results = filter_available_only(results)
 
+    profile = resolve_profile(ctx.scoring_profile or "default", ctx.weight_overrides)
+    ranked = rank_candidates(discovery.candidates, results, profile, context=ctx)
+
+    from namera.telemetry import log_session
+    log_session(discovery.candidates, ranked, profile.name, ctx.niche)
+
     # Interactive mode: rank and show top 10
     if interactive and output_format == "table":
-        profile = resolve_profile(ctx.scoring_profile or "default", ctx.weight_overrides)
-        ranked = rank_candidates(discovery.candidates, results, profile, context=ctx)
         render_find_ranked(ranked, tlds, console)
     elif output_format == "json":
-        profile = resolve_profile(ctx.scoring_profile or "default", ctx.weight_overrides)
-        ranked = rank_candidates(discovery.candidates, results, profile, context=ctx)
-
-        from namera.telemetry import log_session
-        log_session(discovery.candidates, ranked, profile.name, ctx.niche)
-
         has_rate_limit = any(r.is_rate_limited for r in results)
         payload = build_find_json(
             ranked, tlds, profile, ctx, risky_names or None,

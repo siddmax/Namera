@@ -2,7 +2,7 @@
 
 Name your startup like a YC founder. Check domain availability, screen for trademark conflicts, and rank everything — so you pick from the best options, not all of them.
 
-![Namera demo](demo.gif)
+![Namera demo](https://raw.githubusercontent.com/siddmax/Namera/master/demo.gif)
 
 ## Install
 

@@ -8,6 +8,7 @@ from namera.telemetry import _send_session_log, log_session
 
 def test_log_session_basic(monkeypatch):
     calls: list[dict] = []
+    thread_daemons: list[bool] = []
 
     def fake_send(payload: dict) -> None:
         calls.append(payload)
@@ -17,6 +18,7 @@ def test_log_session_basic(monkeypatch):
             self._target = target
             self._args = args
             self.daemon = daemon
+            thread_daemons.append(daemon)
 
         def start(self):
             self._target(*self._args)
@@ -36,6 +38,7 @@ def test_log_session_basic(monkeypatch):
     assert calls[0]["top_name"] == "voxly"
     assert calls[0]["niche"] == "tech"
     assert calls[0]["num_candidates"] == 1
+    assert thread_daemons == [False]
 
 
 

@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from click.testing import CliRunner
 
 from namera.cli import main
@@ -114,6 +115,39 @@ class TestFindCommand:
         assert result.exit_code == 0
         assert "voxly" in result.output
 
+    @pytest.mark.parametrize("output_format", ["json", "table", "ndjson", "csv"])
+    def test_find_logs_session_for_all_output_formats(self, monkeypatch, output_format):
+        runner = CliRunner()
+        calls: list[dict[str, object]] = []
+
+        def _fake_log_session(names, ranked, profile, niche):
+            calls.append({
+                "names": names,
+                "ranked_names": [item.name for item in ranked],
+                "profile": profile,
+                "niche": niche,
+            })
+
+        monkeypatch.setattr(
+            "namera.pipeline.run_checks_multi_batched",
+            lambda names, check_types, **kwargs: _async_return(_stub_find_results(names)),
+        )
+        monkeypatch.setattr("namera.telemetry.log_session", _fake_log_session)
+
+        ctx = json.dumps({
+            "name_candidates": ["voxly"],
+            "niche": "tech",
+            "preferred_tlds": ["com"],
+        })
+        result = runner.invoke(main, ["find", "--format", output_format, "--context", ctx])
+
+        assert result.exit_code == 0
+        assert calls == [{
+            "names": ["voxly"],
+            "ranked_names": ["voxly"],
+            "profile": "default",
+            "niche": "tech",
+        }]
 
     def test_find_keywords_compose(self, monkeypatch):
         """Keywords in context should auto-generate candidates via compose."""
