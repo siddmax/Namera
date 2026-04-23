@@ -55,6 +55,30 @@ def make_domain_result(
     )
 
 
+def make_social_result(
+    query: str = "example",
+    platforms: dict[str, str] | None = None,
+    available: Availability = Availability.AVAILABLE,
+    candidate_name: str | None = None,
+) -> ProviderResult:
+    """Factory for social handle results."""
+    if platforms is None:
+        platforms = {
+            "github": "available",
+            "twitter": "available",
+            "instagram": "available",
+            "tiktok": "available",
+        }
+    return make_result(
+        check_type=CheckType.SOCIAL,
+        provider_name="social",
+        query=query,
+        available=available,
+        candidate_name=candidate_name,
+        details={"platforms": platforms},
+    )
+
+
 def make_trademark_result(
     query: str = "example",
     available: Availability = Availability.AVAILABLE,

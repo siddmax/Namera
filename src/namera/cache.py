@@ -111,6 +111,9 @@ class ResultCache:
         if ttl is None:
             ttl = PROVIDER_TTLS.get(result.provider_name, DEFAULT_TTL)
 
+        if result.available == Availability.UNKNOWN:
+            ttl = max(60, int(ttl * 0.1))
+
         kh = _kwargs_hash(kwargs or {})
         expires_at = time.time() + ttl
 

@@ -1,14 +1,17 @@
-"""Social handle availability provider — HTTP checks, zero cost."""
+"""Social handle availability provider — per-platform HTTP checks."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
+import re
 
 import httpx
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
 
-# Platform URLs — {name} is replaced with the handle
+logger = logging.getLogger(__name__)
+
 PLATFORMS: dict[str, str] = {
     "github": "https://github.com/{name}",
     "twitter": "https://publish.twitter.com/oembed?url=https://twitter.com/{name}",
@@ -16,25 +19,91 @@ PLATFORMS: dict[str, str] = {
     "tiktok": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{name}",
 }
 
-# HTTP status codes that indicate the handle is available (not found)
-_NOT_FOUND = {404}
-
-# User-agent to avoid bot blocks
-_USER_AGENT = (
+_DESKTOP_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-# Platforms that use oembed (GET, not HEAD; 400/404 = available, 200 = taken)
-_OEMBED_PLATFORMS = {"twitter", "tiktok"}
+_MOBILE_USER_AGENT = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 "
+    "Mobile/15E148 Safari/604.1"
+)
+
+_INSTAGRAM_GENERIC_TITLE = re.compile(r"<title>\s*Instagram\s*</title>", re.IGNORECASE)
 
 
 def _shared_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
         follow_redirects=True,
         timeout=10.0,
-        headers={"User-Agent": _USER_AGENT},
+        headers={"User-Agent": _DESKTOP_USER_AGENT},
     )
+
+
+# --- Per-platform checkers ---
+
+
+async def _check_github(client: httpx.AsyncClient, handle: str) -> Availability:
+    url = PLATFORMS["github"].format(name=handle)
+    resp = await client.head(url)
+    if resp.status_code == 404:
+        return Availability.AVAILABLE
+    if 200 <= resp.status_code < 400:
+        return Availability.TAKEN
+    return Availability.UNKNOWN
+
+
+async def _check_twitter(client: httpx.AsyncClient, handle: str) -> Availability:
+    url = PLATFORMS["twitter"].format(name=handle)
+    resp = await client.get(url)
+    if resp.status_code == 200:
+        return Availability.TAKEN
+    if resp.status_code == 404:
+        return Availability.AVAILABLE
+    return Availability.UNKNOWN
+
+
+async def _check_instagram(client: httpx.AsyncClient, handle: str) -> Availability:
+    url = PLATFORMS["instagram"].format(name=handle)
+    resp = await client.get(url, headers={"User-Agent": _MOBILE_USER_AGENT})
+    if resp.status_code != 200:
+        return Availability.UNKNOWN
+    if _INSTAGRAM_GENERIC_TITLE.search(resp.text):
+        return Availability.AVAILABLE
+    if "<title>" in resp.text.lower():
+        return Availability.TAKEN
+    return Availability.UNKNOWN
+
+
+async def _check_tiktok(client: httpx.AsyncClient, handle: str) -> Availability:
+    url = PLATFORMS["tiktok"].format(name=handle)
+    resp = await client.get(url)
+    if resp.status_code == 200:
+        return Availability.TAKEN
+    if resp.status_code == 404:
+        return Availability.AVAILABLE
+    return Availability.UNKNOWN
+
+
+_CHECKERS: dict[str, callable] = {
+    "github": _check_github,
+    "twitter": _check_twitter,
+    "instagram": _check_instagram,
+    "tiktok": _check_tiktok,
+}
+
+
+async def _check_platform(
+    client: httpx.AsyncClient, platform: str, handle: str
+) -> Availability:
+    checker = _CHECKERS.get(platform)
+    if checker is None:
+        return Availability.UNKNOWN
+    try:
+        return await checker(client, handle)
+    except httpx.HTTPError:
+        return Availability.UNKNOWN
 
 
 class SocialHandleProvider(Provider):
@@ -92,47 +161,34 @@ class SocialHandleProvider(Provider):
             available=overall,
             details={
                 "platforms": {p: av.value for p, av in results.items()},
-                "platform_availability": {p: av.value for p, av in results.items()},
             },
         )
-
-
-async def _check_platform(
-    client: httpx.AsyncClient, platform: str, handle: str
-) -> Availability:
-    """Check a single platform. Returns an Availability enum value."""
-    url = PLATFORMS[platform].format(name=handle)
-    try:
-        if platform in _OEMBED_PLATFORMS:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                return Availability.TAKEN
-            if resp.status_code in {400, 404}:
-                return Availability.AVAILABLE
-            return Availability.UNKNOWN
-
-        resp = await client.head(url)
-        if resp.status_code in _NOT_FOUND:
-            return Availability.AVAILABLE
-        if 200 <= resp.status_code < 400:
-            return Availability.TAKEN
-        return Availability.UNKNOWN
-    except httpx.HTTPError:
-        return Availability.UNKNOWN
 
 
 async def batch_social_check(
     names: list[str],
     platforms: list[str] | None = None,
 ) -> list[ProviderResult]:
-    """Check social handles for multiple names with a shared HTTP client.
-
-    All platform checks across all names run concurrently under one connection pool.
-    """
+    """Check social handles for multiple names with a shared HTTP client."""
     provider = SocialHandleProvider()
     async with _shared_client() as client:
         coros = [
             provider.check(name, _http_client=client, social_platforms=platforms)
             for name in names
         ]
-        return list(await asyncio.gather(*coros))
+        gathered = await asyncio.gather(*coros, return_exceptions=True)
+        results = []
+        for name, result in zip(names, gathered):
+            if isinstance(result, Exception):
+                logger.warning("Social check failed for %s: %s", name, result)
+                results.append(ProviderResult(
+                    check_type=CheckType.SOCIAL,
+                    provider_name="social",
+                    query=name,
+                    available=Availability.UNKNOWN,
+                    candidate_name=name,
+                    error=str(result),
+                ))
+            else:
+                results.append(result)
+        return results

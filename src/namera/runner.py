@@ -174,7 +174,17 @@ async def run_checks_multi_batched(
                 )
             except (asyncio.TimeoutError, Exception) as e:
                 logger.warning("Social batch failed: %s", e)
-                return []
+                return [
+                    ProviderResult(
+                        check_type=CheckType.SOCIAL,
+                        provider_name="social",
+                        query=name,
+                        available=Availability.UNKNOWN,
+                        candidate_name=name,
+                        error=str(e),
+                    )
+                    for name in names
+                ]
 
         batch_coros.append(_batch_social())
 
