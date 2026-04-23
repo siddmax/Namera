@@ -4,6 +4,7 @@ import asyncio
 import socket
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
+from namera.providers.whois_servers import WHOIS_SERVERS
 from namera.retry import with_retry
 
 WHOIS_PORT = 43
@@ -15,14 +16,6 @@ class WhoisProvider(Provider):
     name = "whois"
     check_type = CheckType.WHOIS
 
-    WHOIS_SERVERS = {
-        "com": "whois.verisign-grs.com",
-        "net": "whois.verisign-grs.com",
-        "org": "whois.pir.org",
-        "io": "whois.nic.io",
-        "dev": "whois.nic.google",
-    }
-
     @classmethod
     def cache_kwargs(cls, kwargs: dict) -> dict:
         return {}
@@ -30,7 +23,7 @@ class WhoisProvider(Provider):
     async def check(self, query: str, **kwargs) -> ProviderResult:
         domain = query if "." in query else f"{query}.com"
         tld = domain.rsplit(".", 1)[-1]
-        server = self.WHOIS_SERVERS.get(tld)
+        server = WHOIS_SERVERS.get(tld)
 
         if not server:
             return ProviderResult(

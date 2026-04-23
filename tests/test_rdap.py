@@ -14,10 +14,10 @@ def _reset_cache():
     """Reset the module-level RDAP cache before each test."""
     import namera.providers.rdap as rdap_mod
 
-    rdap_mod._cache_loaded = False
+    rdap_mod._cache_attempted = False
     rdap_mod._rdap_server_cache.clear()
     yield
-    rdap_mod._cache_loaded = False
+    rdap_mod._cache_attempted = False
     rdap_mod._rdap_server_cache.clear()
 
 
@@ -130,8 +130,8 @@ async def test_rdap_object_does_not_exist_means_available():
 
 
 @pytest.mark.asyncio
-async def test_fallback_to_dns_when_no_rdap_server():
-    """When RDAP bootstrap has no server for TLD, should fall back to DNS."""
+async def test_dns_taken_is_trusted_when_no_rdap_server():
+    """When RDAP has no server and DNS resolves (TAKEN), trust the DNS result."""
     bootstrap = _make_response(200, json_data={"services": []})
 
     async def fake_get(url, **kwargs):
@@ -144,7 +144,7 @@ async def test_fallback_to_dns_when_no_rdap_server():
         patch(
             "namera.providers.rdap.DnsLookupUtil.resolve",
             new_callable=AsyncMock,
-            return_value=Availability.AVAILABLE,
+            return_value=Availability.TAKEN,
         ) as mock_dns,
     ):
         client_instance = AsyncMock()
@@ -158,7 +158,44 @@ async def test_fallback_to_dns_when_no_rdap_server():
 
     mock_dns.assert_called_once_with("fallbacktest.com")
     assert result.details["domains"][0]["method"] == "dns"
-    assert result.details["domains"][0]["available"] == "available"
+    assert result.details["domains"][0]["available"] == "taken"
+
+
+@pytest.mark.asyncio
+async def test_dns_available_falls_through_to_whois():
+    """DNS returning AVAILABLE is not trusted — should fall through to WHOIS."""
+    bootstrap = _make_response(200, json_data={"services": []})
+
+    async def fake_get(url, **kwargs):
+        if "dns.json" in url:
+            return bootstrap
+        raise httpx.ConnectError("should not be called")
+
+    with (
+        patch("namera.providers.rdap.httpx.AsyncClient") as mock_client_cls,
+        patch(
+            "namera.providers.rdap.DnsLookupUtil.resolve",
+            new_callable=AsyncMock,
+            return_value=Availability.AVAILABLE,
+        ),
+        patch(
+            "namera.providers.rdap._whois_fallback",
+            new_callable=AsyncMock,
+            return_value=Availability.TAKEN,
+        ) as mock_whois,
+    ):
+        client_instance = AsyncMock()
+        client_instance.get = AsyncMock(side_effect=fake_get)
+        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+        client_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = client_instance
+
+        provider = RdapProvider()
+        result = await provider.check("fallbacktest", tlds=["com"])
+
+    mock_whois.assert_called_once_with("fallbacktest.com")
+    assert result.details["domains"][0]["method"] == "whois"
+    assert result.details["domains"][0]["available"] == "taken"
 
 
 @pytest.mark.asyncio
@@ -204,7 +241,7 @@ async def test_rdap_timeout_falls_back_to_dns():
     import namera.providers.rdap as rdap_mod
 
     # Pre-populate cache to skip bootstrap fetch
-    rdap_mod._cache_loaded = True
+    rdap_mod._cache_attempted = True
     rdap_mod._rdap_server_cache["com"] = "https://rdap.example.com"
 
     async def fake_get(url, **kwargs):

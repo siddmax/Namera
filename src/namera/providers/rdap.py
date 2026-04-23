@@ -7,6 +7,7 @@ import httpx
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
 from namera.providers.domain import DnsLookupUtil
+from namera.providers.whois_servers import WHOIS_SERVERS
 from namera.results import summarize_domain_statuses
 
 # IANA RDAP bootstrap URL for DNS registries
@@ -14,14 +15,15 @@ _IANA_RDAP_DNS_URL = "https://data.iana.org/rdap/dns.json"
 
 # Class-level cache for RDAP server mapping (TLD -> RDAP base URL)
 _rdap_server_cache: dict[str, str] = {}
-_cache_loaded = False
+_cache_attempted = False
 
 
 async def _load_rdap_servers(client: httpx.AsyncClient) -> None:
     """Fetch the IANA RDAP bootstrap file and populate the TLD -> URL cache."""
-    global _cache_loaded
-    if _cache_loaded:
+    global _cache_attempted
+    if _cache_attempted:
         return
+    _cache_attempted = True
     try:
         resp = await client.get(_IANA_RDAP_DNS_URL, timeout=5.0)
         resp.raise_for_status()
@@ -32,23 +34,14 @@ async def _load_rdap_servers(client: httpx.AsyncClient) -> None:
                 base_url = urls[0].rstrip("/")
                 for tld in tlds:
                     _rdap_server_cache[tld.lower()] = base_url
-        _cache_loaded = True
     except Exception:
-        # If bootstrap fetch fails, cache stays empty — fallbacks will handle it
         pass
 
 
 async def _whois_fallback(domain: str) -> Availability:
     """Raw-socket WHOIS check as last-resort fallback."""
-    whois_servers = {
-        "com": "whois.verisign-grs.com",
-        "net": "whois.verisign-grs.com",
-        "org": "whois.pir.org",
-        "io": "whois.nic.io",
-        "dev": "whois.nic.google",
-    }
     tld = domain.rsplit(".", 1)[-1].lower()
-    server = whois_servers.get(tld)
+    server = WHOIS_SERVERS.get(tld)
     if not server:
         return Availability.UNKNOWN
 
@@ -141,9 +134,12 @@ class RdapProvider(Provider):
                 pass  # RDAP failed — fall through to DNS
 
         # --- DNS fallback ---
+        # DNS can confirm TAKEN (domain resolves) but cannot confirm AVAILABLE
+        # (a registered domain may have no A records). Only trust TAKEN here.
         try:
             dns_result = await DnsLookupUtil.resolve(domain)
-            return dns_result, "dns"
+            if dns_result == Availability.TAKEN:
+                return dns_result, "dns"
         except Exception:
             pass  # DNS failed — fall through to WHOIS
 
