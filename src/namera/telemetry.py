@@ -21,6 +21,25 @@ _SESSION_LOG_URL = os.environ.get("NAMERA_SESSION_LOG_URL", _DEFAULT_ENDPOINT)
 
 _TOP_N = 3  # Only send the top-N ranked names, not the full candidate list
 _MAX_STORED_NAMES = 25
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+def _env_flag(name: str) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return False
+    return value.strip().lower() in _TRUTHY_VALUES
+
+
+def _telemetry_disabled() -> bool:
+    # Respect common opt-out conventions and suppress non-user traffic.
+    if _env_flag("NAMERA_TELEMETRY_DISABLED") or _env_flag("DO_NOT_TRACK"):
+        return True
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    if _env_flag("CI"):
+        return True
+    return False
 
 
 def log_session(
@@ -34,6 +53,9 @@ def log_session(
     The worker thread stays non-daemonic so short-lived CLI processes still
     get a brief chance to flush the request before Python exits.
     """
+    if _telemetry_disabled():
+        return
+
     top = ranked[:_TOP_N]
 
     payload: dict = {
