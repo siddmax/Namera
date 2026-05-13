@@ -1,7 +1,11 @@
 name: Schema guard
 
-# Catches the PGRST203 exposed-RPC-overload class of bug against the live
-# Namera schema. Reuses the workflow published in siddmax/yurivan.
+# Inlined (not via cross-repo `uses:`) because this repo is public while
+# siddmax/yurivan's reusable workflow is private — GitHub Actions
+# disallows public→private workflow reuse.
+#
+# Mirrors siddmax/yurivan/.github/workflows/schema-guard.reusable.yml
+# logic. If that file changes, hand-port it here.
 on:
   push:
     branches: [master]
@@ -17,11 +21,66 @@ concurrency:
   group: schema-guard-production
   cancel-in-progress: false
 
+env:
+  SCHEMA: namera
+  PROJECT_REF: wmnzjmrysnzjthldgffh
+
 jobs:
-  guard:
-    uses: siddmax/yurivan/.github/workflows/schema-guard.reusable.yml@cc481a93e949e9dd2e2662ff927038467f3336f7
-    with:
-      schema: namera
-      project-ref: wmnzjmrysnzjthldgffh
-    secrets:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+  rpc-overload-check:
+    name: No exposed RPC overloads (namera)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ ! "$SCHEMA" =~ ^[a-z][a-z0-9_]*$ ]]; then
+            echo "::error::Invalid schema name (must be ^[a-z][a-z0-9_]*$): $SCHEMA"
+            exit 1
+          fi
+          if [[ ! "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo "::error::Invalid project ref (must be 20 lowercase alphanumeric chars): $PROJECT_REF"
+            exit 1
+          fi
+
+      - name: Query pg_proc for duplicate exposed signatures
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          SQL="SELECT n.nspname AS schema,
+                      p.proname  AS function,
+                      count(*)   AS overloads,
+                      string_agg(pg_get_function_identity_arguments(p.oid), ' | ') AS signatures
+               FROM pg_proc p
+               JOIN pg_namespace n ON p.pronamespace = n.oid
+               WHERE n.nspname = '$SCHEMA'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM pg_depend d
+                   WHERE d.objid = p.oid AND d.deptype = 'e'
+                 )
+               GROUP BY n.nspname, p.proname
+               HAVING count(*) > 1
+               ORDER BY p.proname;"
+
+          BODY=$(jq -n --arg q "$SQL" '{query: $q}')
+
+          RESPONSE=$(curl -fsS -X POST \
+            "https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$BODY")
+
+          COUNT=$(echo "$RESPONSE" | jq 'length')
+
+          if [ "$COUNT" = "0" ]; then
+            echo "rpc-overload-check: OK — no exposed RPC overloads in '$SCHEMA' schema"
+            exit 0
+          fi
+
+          echo "::error::rpc-overload-check: FAIL — duplicate exposed RPC signatures found in '$SCHEMA':"
+          echo "$RESPONSE" | jq -r '.[] | "  - \(.schema).\(.function) (\(.overloads) overloads): \(.signatures)"'
+          echo ""
+          echo "Exposed-RPC overloads cause PostgREST PGRST203 ambiguity at runtime."
+          echo "The migration that introduced the new signature must DROP the old one in the same file."
+          exit 1
