@@ -74,32 +74,50 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" dist/* \
-            --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; uploading any missing artifacts."
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --title "$tag" --generate-notes
+          fi
 
       - name: Publish to MCP Registry
         run: |
           # Install mcp-publisher
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
 
-          # Update server.json with the new version
+          # Update server.json with the new version (both the server version
+          # and the pypi package version — MCP registry rejects duplicate
+          # server versions, so the root field must bump every release).
           VERSION="${{ steps.version.outputs.version }}"
           python3 -c "
           import json
           with open('server.json') as f:
               data = json.load(f)
+          data['version'] = '$VERSION'
           data['packages'][0]['version'] = '$VERSION'
           with open('server.json', 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
           "
 
-          # Authenticate via GitHub OIDC and publish
+          # Authenticate via GitHub OIDC and publish. Tolerate the case where
+          # this version was already published on a prior partial run.
           ./mcp-publisher login github-oidc
-          ./mcp-publisher publish
+          if ! out=$(./mcp-publisher publish 2>&1); then
+            echo "$out"
+            if echo "$out" | grep -q "cannot publish duplicate version"; then
+              echo "MCP version $VERSION already published; treating as success."
+              exit 0
+            fi
+            exit 1
+          fi
+          echo "$out"
