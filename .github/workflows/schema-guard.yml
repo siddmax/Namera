@@ -55,6 +55,11 @@ jobs:
                FROM pg_proc p
                JOIN pg_namespace n ON p.pronamespace = n.oid
                WHERE n.nspname = '$SCHEMA'
+                 AND p.prokind = 'f'
+                 AND p.prorettype NOT IN (
+                   'pg_catalog.trigger'::regtype,
+                   'pg_catalog.event_trigger'::regtype
+                 )
                  AND NOT EXISTS (
                    SELECT 1 FROM pg_depend d
                    WHERE d.objid = p.oid AND d.deptype = 'e'
