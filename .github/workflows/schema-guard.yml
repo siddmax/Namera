@@ -4,11 +4,14 @@ name: Schema guard
 # Namera schema. Reuses the workflow published in siddmax/yurivan.
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "supabase/migrations/**"
       - ".github/workflows/schema-guard.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: schema-guard-production
@@ -16,7 +19,7 @@ concurrency:
 
 jobs:
   guard:
-    uses: siddmax/yurivan/.github/workflows/schema-guard.reusable.yml@main
+    uses: siddmax/yurivan/.github/workflows/schema-guard.reusable.yml@cc481a93e949e9dd2e2662ff927038467f3336f7
     with:
       schema: namera
       project-ref: wmnzjmrysnzjthldgffh
