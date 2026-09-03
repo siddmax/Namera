@@ -58,6 +58,9 @@ class SupabaseTrademarkProvider(Provider):
                     mode="exact",
                     nice_classes=nice_classes,
                 )
+                if nice_classes and not data.get("exact", {}).get("matches"):
+                    if not await _classes_are_trustworthy(client, query, "exact", 0.3):
+                        return _class_filter_unusable(query, "uspto", nice_classes)
         except Exception as exc:
             return ProviderResult(
                 check_type=CheckType.TRADEMARK,
@@ -98,6 +101,13 @@ class SupabaseSimilarityProvider(Provider):
                     threshold=threshold,
                     nice_classes=nice_classes,
                 )
+                if nice_classes and not data.get("similarity", {}).get("matches"):
+                    if not await _classes_are_trustworthy(
+                        client, query, "similarity", threshold
+                    ):
+                        return _class_filter_unusable(
+                            query, "trademark-similarity", nice_classes
+                        )
         except Exception as exc:
             return ProviderResult(
                 check_type=CheckType.TRADEMARK,
@@ -108,6 +118,38 @@ class SupabaseSimilarityProvider(Provider):
             )
 
         return _parse_single_result(query, data, "similarity")
+
+
+async def _classes_are_trustworthy(
+    client: httpx.AsyncClient, query: str, mode: str, threshold: float
+) -> bool:
+    """Does an unfiltered lookup also come back empty?
+
+    The USPTO import leaves nice_classes empty on every row, so a
+    class-filtered query matches nothing and looks like a clean result. If the
+    same query without the filter DOES find marks, the filter suppressed them
+    and the "clear" answer is an artifact, not a fact.
+    """
+    data = await _call_api(client, query, mode=mode, threshold=threshold)
+    if mode == "exact":
+        return not data.get("exact", {}).get("matches")
+    return not data.get("similarity", {}).get("matches")
+
+
+def _class_filter_unusable(query: str, provider: str, nice_classes: list[int]) -> ProviderResult:
+    return ProviderResult(
+        check_type=CheckType.TRADEMARK,
+        provider_name=provider,
+        query=query,
+        candidate_name=query,
+        available=Availability.UNKNOWN,
+        details={"nice_classes": nice_classes, "source": provider},
+        error=(
+            f"No marks found in classes {nice_classes}, but unfiltered search finds "
+            "matches: this dataset has no class data, so the filter cannot clear a "
+            "name. Search USPTO TESS directly for a class-specific answer."
+        ),
+    )
 
 
 async def _call_api(

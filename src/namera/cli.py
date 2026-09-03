@@ -60,6 +60,19 @@ def _error_exit(
     raise SystemExit(code)
 
 
+def _parse_nice_classes(raw: str | None) -> list[int] | None:
+    """Parse "9,35,42" into [9, 35, 42]."""
+    if not raw:
+        return None
+    try:
+        classes = [int(part) for part in raw.split(",") if part.strip()]
+    except ValueError:
+        raise click.BadParameter("Nice classes must be numbers, e.g. 9,35,42") from None
+    if any(c < 1 or c > 45 for c in classes):
+        raise click.BadParameter("Nice classes run from 1 to 45")
+    return classes or None
+
+
 def _resolve_format(output_format: str) -> str:
     """Resolve output format, auto-switching to JSON when stdout is piped."""
     if output_format == "table" and not sys.stdout.isatty():
@@ -161,10 +174,17 @@ def whois(name: str, output_format: str, verbose: bool):
     default="table", help="Output format",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Include summary/context in JSON output")
-def trademark(name: str, output_format: str, verbose: bool):
+@click.option(
+    "--nice-classes", "-c", default=None,
+    help="Comma-separated Nice class numbers to filter by, e.g. 9,35,42",
+)
+def trademark(name: str, output_format: str, verbose: bool, nice_classes: str | None):
     """Check trademark status for a name."""
     output_format = _resolve_format(output_format)
-    results = asyncio.run(run_checks(name, [CheckType.TRADEMARK]))
+    classes = _parse_nice_classes(nice_classes)
+    results = asyncio.run(
+        run_checks(name, [CheckType.TRADEMARK], nice_classes=classes)
+    )
 
     output = render_results(results, format=output_format, console=console, verbose=verbose)
     if output is not None:
