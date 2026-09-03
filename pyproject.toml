@@ -30,9 +30,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/siddmax/Namera"
-Repository = "https://github.com/siddmax/Namera"
-Issues = "https://github.com/siddmax/Namera/issues"
+Homepage = "https://github.com/solozerolabs/Namera"
+Repository = "https://github.com/solozerolabs/Namera"
+Issues = "https://github.com/solozerolabs/Namera/issues"
 
 [project.scripts]
 namera = "namera.cli:main"

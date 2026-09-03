@@ -2,7 +2,7 @@
 
 Name your startup like a YC founder. Check domain availability, screen for trademark conflicts, and rank everything — so you pick from the best options, not all of them.
 
-![Namera demo](https://raw.githubusercontent.com/siddmax/Namera/master/demo.gif)
+![Namera demo](https://raw.githubusercontent.com/solozerolabs/Namera/master/demo.gif)
 
 ## Install
 
@@ -20,7 +20,7 @@ uv tool install namera
 <summary>Install from source</summary>
 
 ```bash
-git clone https://github.com/siddmax/Namera.git
+git clone https://github.com/solozerolabs/Namera.git
 cd Namera
 pip install -e .
 ```
@@ -156,4 +156,4 @@ ruff check src/ tests/
 
 MIT
 
-<!-- mcp-name: io.github.siddmax/namera -->
+<!-- mcp-name: io.github.solozerolabs/namera -->

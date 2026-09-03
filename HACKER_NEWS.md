@@ -35,7 +35,7 @@ Keep it factual. Avoid superlatives ("fast", "best", "powerful"). HN readers res
 Link directly to the GitHub repo:
 
 ```
-https://github.com/siddmax/Namera
+https://github.com/solozerolabs/Namera
 ```
 
 HN strongly prefers GitHub links for Show HN posts — it lets people read the code immediately. Do NOT link to a landing page unless it has a live demo.
