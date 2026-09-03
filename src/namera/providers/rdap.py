@@ -7,6 +7,7 @@ import httpx
 
 from namera.providers.base import Availability, CheckType, Provider, ProviderResult
 from namera.providers.domain import DnsLookupUtil
+from namera.providers.whois import classify_whois_response
 from namera.providers.whois_servers import WHOIS_SERVERS
 from namera.results import summarize_domain_statuses
 
@@ -59,8 +60,7 @@ async def _whois_fallback(domain: str) -> Availability:
     loop = asyncio.get_running_loop()
     try:
         raw = await loop.run_in_executor(None, _sync_whois)
-        taken = "Domain Name:" in raw or "domain:" in raw.lower()
-        return Availability.TAKEN if taken else Availability.AVAILABLE
+        return classify_whois_response(raw)
     except Exception:
         return Availability.UNKNOWN
 

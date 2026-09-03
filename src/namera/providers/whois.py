@@ -9,6 +9,37 @@ from namera.retry import with_retry
 
 WHOIS_PORT = 43
 
+# Explicit "this domain is not registered" markers used by the registries we
+# query. A registry that is rate-limiting us, truncating, or erroring emits
+# none of these — and must never be read as "available".
+_NOT_FOUND_MARKERS = (
+    "no match for",
+    "no match\n",
+    "not found",
+    "no data found",
+    "no entries found",
+    "no object found",
+    "status: free",
+    "status: available",
+    "domain status: no object found",
+)
+
+
+def classify_whois_response(raw: str) -> Availability:
+    """Classify a raw WHOIS response into TAKEN / AVAILABLE / UNKNOWN.
+
+    TAKEN needs a record, AVAILABLE needs an explicit not-found marker.
+    Anything else is UNKNOWN: absence of a record is not evidence of
+    availability, and treating it as such is how parked domains get
+    reported as free.
+    """
+    text = raw.lower()
+    if "domain name:" in text or "\ndomain:" in text:
+        return Availability.TAKEN
+    if any(marker in text for marker in _NOT_FOUND_MARKERS):
+        return Availability.AVAILABLE
+    return Availability.UNKNOWN
+
 
 class WhoisProvider(Provider):
     """WHOIS lookup via raw socket connection (no API key needed)."""
@@ -36,12 +67,11 @@ class WhoisProvider(Provider):
 
         try:
             raw = await self._query_whois(server, domain)
-            taken = "Domain Name:" in raw or "domain:" in raw.lower()
             return ProviderResult(
                 check_type=CheckType.WHOIS,
                 provider_name=self.name,
                 query=domain,
-                available=Availability.TAKEN if taken else Availability.AVAILABLE,
+                available=classify_whois_response(raw),
                 details={"raw": raw[:2000]},
             )
         except Exception as e:
