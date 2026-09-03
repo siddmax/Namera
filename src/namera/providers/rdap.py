@@ -109,6 +109,23 @@ class RdapProvider(Provider):
             details={"domains": results},
         )
 
+    @staticmethod
+    async def _confirm_available(domain: str) -> tuple[Availability, str]:
+        """Second-source an RDAP "not found" before calling a domain free.
+
+        Some registries answer 404 for domains that are registered — the IANA
+        bootstrap points at a stale or incomplete RDAP endpoint. Confirm
+        against WHOIS when we have a server for the TLD; a WHOIS record wins
+        over RDAP's absence of one. Costs a round-trip only on domains that
+        already look available.
+        """
+        tld = domain.rsplit(".", 1)[-1].lower()
+        if tld not in WHOIS_SERVERS:
+            return Availability.AVAILABLE, "rdap"
+        if await _whois_fallback(domain) == Availability.TAKEN:
+            return Availability.TAKEN, "whois"
+        return Availability.AVAILABLE, "rdap"
+
     async def _check_domain(
         self, client: httpx.AsyncClient, domain: str
     ) -> tuple[Availability, str]:
@@ -123,11 +140,11 @@ class RdapProvider(Provider):
                     f"{rdap_url}/domain/{domain}", timeout=5.0
                 )
                 if resp.status_code == 404:
-                    return Availability.AVAILABLE, "rdap"
+                    return await self._confirm_available(domain)
                 if resp.status_code == 200:
                     body = resp.text
                     if "object does not exist" in body.lower():
-                        return Availability.AVAILABLE, "rdap"
+                        return await self._confirm_available(domain)
                     return Availability.TAKEN, "rdap"
                 # Non-200/404 — fall through to DNS
             except Exception:

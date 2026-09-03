@@ -21,6 +21,20 @@ def _reset_cache():
     rdap_mod._rdap_server_cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _stub_whois_confirmation():
+    """RDAP "not found" is now second-sourced against WHOIS.
+
+    Stub that confirmation so these tests exercise RDAP alone instead of
+    opening a real socket to a registry.
+    """
+    with patch(
+        "namera.providers.rdap._whois_fallback",
+        return_value=Availability.AVAILABLE,
+    ):
+        yield
+
+
 def test_rdap_provider_registered():
     """RdapProvider should be auto-registered in the provider registry."""
     provider_cls = registry.get("rdap")

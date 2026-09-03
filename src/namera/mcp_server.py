@@ -29,7 +29,12 @@ _check_mcp_dependency()
 import json  # noqa: E402
 import logging  # noqa: E402
 
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+# mcp 2.x renamed FastMCP to MCPServer; the constructor, .tool() and
+# .run() signatures we use are unchanged, so one alias covers both.
+try:  # mcp >= 2.0
+    from mcp.server.mcpserver import MCPServer  # noqa: E402
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP as MCPServer  # noqa: E402
 
 from namera.context import BusinessContext  # noqa: E402
 from namera.core import check_and_rank, check_single, resolve_profile  # noqa: E402
@@ -38,7 +43,7 @@ from namera.ranking_display import build_find_json  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-mcp_server = FastMCP(
+mcp_server = MCPServer(
     "namera",
     instructions=(
         "Check name availability across domains, trademarks, and social handles. "

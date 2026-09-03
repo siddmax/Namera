@@ -39,10 +39,8 @@ namera = "namera.cli:main"
 namera-mcp = "namera.mcp_server:main"
 
 [project.optional-dependencies]
-# ponytail: mcp 2.x renamed FastMCP -> MCPServer; pinned until
-# mcp_server.py migrates to the new API.
 mcp = [
-    "mcp>=1.0,<2",
+    "mcp>=1.0",
 ]
 dev = [
     "build>=1.2",
